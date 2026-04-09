@@ -534,6 +534,450 @@ function getModelMenuItems(
     : state.allModels;
 }
 
+function splitPlainMarkdownLine(line: string, maxLength = 1500): string[] {
+  if (line.length <= maxLength) return [line];
+  const words = line.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [line];
+  const parts: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current.length === 0 ? word : `${current} ${word}`;
+    if (candidate.length <= maxLength) {
+      current = candidate;
+      continue;
+    }
+    if (current.length > 0) {
+      parts.push(current);
+      current = "";
+    }
+    if (word.length <= maxLength) {
+      current = word;
+      continue;
+    }
+    for (let i = 0; i < word.length; i += maxLength) {
+      parts.push(word.slice(i, i + maxLength));
+    }
+  }
+  if (current.length > 0) {
+    parts.push(current);
+  }
+  return parts.length > 0 ? parts : [line];
+}
+
+function stripInlineMarkdownToPlainText(text: string): string {
+  let result = text;
+  result = result.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, "$1");
+  result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1");
+  result = result.replace(/<((?:https?:\/\/|mailto:)[^>]+)>/g, "$1");
+  result = result.replace(/`([^`\n]+)`/g, "$1");
+  result = result.replace(/(\*\*\*|___)(.+?)\1/g, "$2");
+  result = result.replace(/(\*\*|__)(.+?)\1/g, "$2");
+  result = result.replace(/(\*|_)(.+?)\1/g, "$2");
+  result = result.replace(/~~(.+?)~~/g, "$1");
+  result = result.replace(/\\([\\`*_{}\[\]()#+\-.!>~|])/g, "$1");
+  return result;
+}
+
+function renderMarkdownPreviewText(markdown: string): string {
+  const normalized = markdown.replace(/\r\n/g, "\n").trim();
+  if (normalized.length === 0) return "";
+  const output: string[] = [];
+  const lines = normalized.split("\n");
+  let inFence = false;
+  for (const rawLine of lines) {
+    const line = rawLine ?? "";
+    if (isFencedCodeStart(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) {
+      output.push(line);
+      continue;
+    }
+    if (isMarkdownTableSeparator(line)) {
+      continue;
+    }
+    const heading = line.match(/^\s*#{1,6}\s+(.+)$/);
+    if (heading) {
+      output.push(stripInlineMarkdownToPlainText(heading[1] ?? ""));
+      continue;
+    }
+    const task = line.match(/^(\s*)([-*+]|\d+\.)\s+\[([ xX])\]\s+(.+)$/);
+    if (task) {
+      const indent = " ".repeat((task[1] ?? "").length);
+      const marker = (task[3] ?? " ").toLowerCase() === "x" ? "[x]" : "[ ]";
+      output.push(
+        `${indent}${marker} ${stripInlineMarkdownToPlainText(task[4] ?? "")}`,
+      );
+      continue;
+    }
+    const bullet = line.match(/^(\s*)[-*+]\s+(.+)$/);
+    if (bullet) {
+      output.push(
+        `${" ".repeat((bullet[1] ?? "").length)}• ${stripInlineMarkdownToPlainText(bullet[2] ?? "")}`,
+      );
+      continue;
+    }
+    const numbered = line.match(/^(\s*\d+\.)\s+(.+)$/);
+    if (numbered) {
+      output.push(
+        `${numbered[1]} ${stripInlineMarkdownToPlainText(numbered[2] ?? "")}`,
+      );
+      continue;
+    }
+    const quote = line.match(/^\s*>\s?(.+)$/);
+    if (quote) {
+      output.push(`> ${stripInlineMarkdownToPlainText(quote[1] ?? "")}`);
+      continue;
+    }
+    if (/^\s*([-*_]\s*){3,}\s*$/.test(line)) {
+      output.push("────────");
+      continue;
+    }
+    output.push(stripInlineMarkdownToPlainText(line));
+  }
+  return output.join("\n");
+}
+
+function renderInlineMarkdown(text: string): string {
+  const tokens: string[] = [];
+  const makeToken = (html: string): string => {
+    const token = `\uE000${tokens.length}\uE001`;
+    tokens.push(html);
+    return token;
+  };
+  let result = text;
+  result = result.replace(
+    /!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g,
+    (_match, alt: string, url: string) => {
+      const label = alt.trim().length > 0 ? alt : url;
+      return makeToken(`<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`);
+    },
+  );
+  result = result.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    (_match, label: string, url: string) => {
+      return makeToken(`<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`);
+    },
+  );
+  result = result.replace(
+    /<((?:https?:\/\/|mailto:)[^>]+)>/g,
+    (_match, url: string) => {
+      return makeToken(`<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>`);
+    },
+  );
+  result = result.replace(/`([^`\n]+)`/g, (_match, code: string) => {
+    return makeToken(`<code>${escapeHtml(code)}</code>`);
+  });
+  result = escapeHtml(result);
+  result = result.replace(/(\*\*\*|___)(.+?)\1/g, "<b><i>$2</i></b>");
+  result = result.replace(/~~(.+?)~~/g, "<s>$1</s>");
+  result = result.replace(/(\*\*|__)(.+?)\1/g, "<b>$2</b>");
+  result = result.replace(/(\*|_)(.+?)\1/g, "<i>$2</i>");
+  result = result.replace(
+    /(^|[\s>(])(\[(?: |x|X)\])(?=($|[\s<).,:;!?]))/g,
+    (_match, prefix: string, checkbox: string) => {
+      const normalized = checkbox.toLowerCase() === "[x]" ? "[x]" : "[ ]";
+      return `${prefix}<code>${normalized}</code>`;
+    },
+  );
+  result = result.replace(/\\([\\`*_{}\[\]()#+\-.!>~|])/g, "$1");
+  return result.replace(
+    /\uE000(\d+)\uE001/g,
+    (_match, index: string) => tokens[Number(index)] ?? "",
+  );
+}
+
+function buildListIndent(level: number): string {
+  return "&nbsp;".repeat(Math.max(0, Math.min(12, level * 2)));
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  return /^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/.test(line);
+}
+
+function parseMarkdownTableRow(line: string): string[] {
+  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  return trimmed
+    .split("|")
+    .map((cell) => stripInlineMarkdownToPlainText(cell.trim()));
+}
+
+function renderMarkdownTextLines(block: string): string[] {
+  const rendered: string[] = [];
+  const lines = block.split("\n");
+  for (const line of lines) {
+    if (line.trim().length === 0) continue;
+    const pieces = splitPlainMarkdownLine(line);
+    for (const piece of pieces) {
+      const heading = piece.match(/^(\s*)#{1,6}\s+(.+)$/);
+      if (heading) {
+        rendered.push(
+          `${buildListIndent(Math.floor((heading[1] ?? "").length / 2))}<b>${renderInlineMarkdown(heading[2] ?? "")}</b>`,
+        );
+        continue;
+      }
+      const task = piece.match(/^(\s*)([-*+]|\d+\.)\s+\[([ xX])\]\s+(.+)$/);
+      if (task) {
+        const indent = buildListIndent(Math.floor((task[1] ?? "").length / 2));
+        const marker = (task[3] ?? " ").toLowerCase() === "x" ? "[x]" : "[ ]";
+        rendered.push(
+          `${indent}<code>${marker}</code> ${renderInlineMarkdown(task[4] ?? "")}`,
+        );
+        continue;
+      }
+      const bullet = piece.match(/^(\s*)[-*+]\s+(.+)$/);
+      if (bullet) {
+        const indent = buildListIndent(
+          Math.floor((bullet[1] ?? "").length / 2),
+        );
+        rendered.push(`${indent}• ${renderInlineMarkdown(bullet[2] ?? "")}`);
+        continue;
+      }
+      const numbered = piece.match(/^(\s*)(\d+)\.\s+(.+)$/);
+      if (numbered) {
+        const indent = buildListIndent(
+          Math.floor((numbered[1] ?? "").length / 2),
+        );
+        rendered.push(
+          `${indent}${numbered[2]}. ${renderInlineMarkdown(numbered[3] ?? "")}`,
+        );
+        continue;
+      }
+      const quote = piece.match(/^>\s?(.+)$/);
+      if (quote) {
+        rendered.push(
+          `<blockquote>${renderInlineMarkdown(quote[1] ?? "")}</blockquote>`,
+        );
+        continue;
+      }
+      const trimmed = piece.trim();
+      if (/^([-*_]\s*){3,}$/.test(trimmed)) {
+        rendered.push("──────────────────────");
+        continue;
+      }
+      rendered.push(renderInlineMarkdown(piece));
+    }
+  }
+  return rendered;
+}
+
+function renderMarkdownCodeBlock(code: string, language?: string): string[] {
+  const open = language
+    ? `<pre><code class="language-${escapeHtml(language)}">`
+    : "<pre><code>";
+  const close = "</code></pre>";
+  const maxContentLength = MAX_MESSAGE_LENGTH - open.length - close.length;
+  const chunks: string[] = [];
+  let current = "";
+  const pushCurrent = (): void => {
+    if (current.length === 0) return;
+    chunks.push(`${open}${current}${close}`);
+    current = "";
+  };
+  const appendEscapedLine = (escapedLine: string): void => {
+    if (escapedLine.length <= maxContentLength) {
+      const candidate =
+        current.length === 0 ? escapedLine : `${current}\n${escapedLine}`;
+      if (candidate.length <= maxContentLength) {
+        current = candidate;
+        return;
+      }
+      pushCurrent();
+      current = escapedLine;
+      return;
+    }
+    pushCurrent();
+    for (let i = 0; i < escapedLine.length; i += maxContentLength) {
+      chunks.push(
+        `${open}${escapedLine.slice(i, i + maxContentLength)}${close}`,
+      );
+    }
+  };
+  for (const line of code.split("\n")) {
+    appendEscapedLine(escapeHtml(line));
+  }
+  pushCurrent();
+  return chunks.length > 0 ? chunks : [`${open}${close}`];
+}
+
+function renderMarkdownTableBlock(lines: string[]): string[] {
+  const rows = lines.map(parseMarkdownTableRow);
+  const columnCount = Math.max(...rows.map((row) => row.length), 0);
+  const normalizedRows = rows.map((row) => {
+    const next = [...row];
+    while (next.length < columnCount) {
+      next.push("");
+    }
+    return next;
+  });
+  const widths = Array.from({ length: columnCount }, (_, columnIndex) => {
+    return Math.max(
+      3,
+      ...normalizedRows.map((row) => (row[columnIndex] ?? "").length),
+    );
+  });
+  const formatRow = (row: string[]): string => {
+    return `| ${row.map((cell, columnIndex) => (cell ?? "").padEnd(widths[columnIndex] ?? 3)).join(" | ")} |`;
+  };
+  const separator = `| ${widths.map((width) => "-".repeat(width)).join(" | ")} |`;
+  const [header, ...body] = normalizedRows;
+  const tableLines = [
+    formatRow(header ?? []),
+    separator,
+    ...body.map(formatRow),
+  ];
+  return renderMarkdownCodeBlock(tableLines.join("\n"), "markdown");
+}
+
+function renderMarkdownQuoteBlock(lines: string[]): string[] {
+  const inner = lines.map((line) => line.replace(/^\s*>\s?/, "")).join("\n");
+  const rendered = renderMarkdownTextLines(inner).join("\n");
+  return rendered.length > 0 ? [`<blockquote>${rendered}</blockquote>`] : [];
+}
+
+function isFencedCodeStart(line: string): boolean {
+  return /^\s*```/.test(line);
+}
+
+function isIndentedCodeLine(line: string): boolean {
+  return /^(?:\t| {4,})/.test(line);
+}
+
+function renderMarkdownToTelegramHtmlChunks(markdown: string): string[] {
+  const normalized = markdown.replace(/\r\n/g, "\n").trim();
+  if (normalized.length === 0) return [];
+  const renderedBlocks: string[] = [];
+  const lines = normalized.split("\n");
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index] ?? "";
+    const nextLine = lines[index + 1] ?? "";
+    if (isFencedCodeStart(line)) {
+      const language = line.trim().slice(3).trim() || undefined;
+      index += 1;
+      const codeLines: string[] = [];
+      while (index < lines.length && !isFencedCodeStart(lines[index] ?? "")) {
+        codeLines.push(lines[index] ?? "");
+        index += 1;
+      }
+      if (index < lines.length) {
+        index += 1;
+      }
+      renderedBlocks.push(
+        ...renderMarkdownCodeBlock(codeLines.join("\n"), language),
+      );
+      while (index < lines.length && (lines[index] ?? "").trim().length === 0) {
+        index += 1;
+      }
+      continue;
+    }
+    if (line.trim().length === 0) {
+      index += 1;
+      continue;
+    }
+    if (line.includes("|") && isMarkdownTableSeparator(nextLine)) {
+      const tableLines: string[] = [line];
+      index += 2;
+      while (index < lines.length) {
+        const tableLine = lines[index] ?? "";
+        if (tableLine.trim().length === 0 || !tableLine.includes("|")) {
+          break;
+        }
+        tableLines.push(tableLine);
+        index += 1;
+      }
+      renderedBlocks.push(...renderMarkdownTableBlock(tableLines));
+      continue;
+    }
+    if (isIndentedCodeLine(line)) {
+      const codeLines: string[] = [];
+      while (index < lines.length && isIndentedCodeLine(lines[index] ?? "")) {
+        const rawLine = lines[index] ?? "";
+        codeLines.push(
+          rawLine.startsWith("\t") ? rawLine.slice(1) : rawLine.slice(4),
+        );
+        index += 1;
+      }
+      renderedBlocks.push(...renderMarkdownCodeBlock(codeLines.join("\n")));
+      continue;
+    }
+    if (/^\s*>/.test(line)) {
+      const quoteLines: string[] = [];
+      while (index < lines.length && /^\s*>/.test(lines[index] ?? "")) {
+        quoteLines.push(lines[index] ?? "");
+        index += 1;
+      }
+      renderedBlocks.push(...renderMarkdownQuoteBlock(quoteLines));
+      continue;
+    }
+    const textLines: string[] = [];
+    while (index < lines.length) {
+      const current = lines[index] ?? "";
+      const following = lines[index + 1] ?? "";
+      if (current.trim().length === 0) break;
+      if (
+        isFencedCodeStart(current) ||
+        isIndentedCodeLine(current) ||
+        /^\s*>/.test(current)
+      )
+        break;
+      if (current.includes("|") && isMarkdownTableSeparator(following)) break;
+      textLines.push(current);
+      index += 1;
+    }
+    renderedBlocks.push(...renderMarkdownTextLines(textLines.join("\n")));
+  }
+  const chunks: string[] = [];
+  let current = "";
+  for (const block of renderedBlocks) {
+    const candidate = current.length === 0 ? block : `${current}\n${block}`;
+    if (candidate.length <= MAX_MESSAGE_LENGTH) {
+      current = candidate;
+      continue;
+    }
+    if (current.length > 0) {
+      chunks.push(current);
+      current = "";
+    }
+    if (block.length <= MAX_MESSAGE_LENGTH) {
+      current = block;
+      continue;
+    }
+    for (let i = 0; i < block.length; i += MAX_MESSAGE_LENGTH) {
+      chunks.push(block.slice(i, i + MAX_MESSAGE_LENGTH));
+    }
+  }
+  if (current.length > 0) {
+    chunks.push(current);
+  }
+  return chunks;
+}
+
+type TelegramRenderMode = "plain" | "markdown" | "html";
+
+interface TelegramRenderedChunk {
+  text: string;
+  parseMode?: "HTML";
+}
+
+function renderTelegramMessage(
+  text: string,
+  options?: { mode?: TelegramRenderMode },
+): TelegramRenderedChunk[] {
+  const mode = options?.mode ?? "plain";
+  if (mode === "plain") {
+    return chunkParagraphs(text).map((chunk) => ({ text: chunk }));
+  }
+  if (mode === "html") {
+    return [{ text, parseMode: "HTML" }];
+  }
+  return renderMarkdownToTelegramHtmlChunks(text).map((chunk) => ({
+    text: chunk,
+    parseMode: "HTML",
+  }));
+}
+
 function chunkParagraphs(text: string): string[] {
   if (text.length <= MAX_MESSAGE_LENGTH) return [text];
 
@@ -832,12 +1276,13 @@ export default function (pi: ExtensionAPI) {
     const state = previewState;
     if (!state) return;
     state.flushTimer = undefined;
-    const text = state.pendingText.trim();
-    if (!text || text === state.lastSentText) return;
+    const rawText = state.pendingText.trim();
+    const previewText = renderMarkdownPreviewText(rawText).trim();
+    if (!previewText || previewText === state.lastSentText) return;
     const truncated =
-      text.length > MAX_MESSAGE_LENGTH
-        ? text.slice(0, MAX_MESSAGE_LENGTH)
-        : text;
+      previewText.length > MAX_MESSAGE_LENGTH
+        ? previewText.slice(0, MAX_MESSAGE_LENGTH)
+        : previewText;
 
     if (draftSupport !== "unsupported") {
       const draftId = state.draftId ?? allocateDraftId();
@@ -904,26 +1349,86 @@ export default function (pi: ExtensionAPI) {
     return state.messageId !== undefined;
   }
 
+  async function finalizeMarkdownPreview(
+    chatId: number,
+    markdown: string,
+  ): Promise<boolean> {
+    const state = previewState;
+    if (!state) return false;
+    await flushPreview(chatId);
+    const chunks = renderTelegramMessage(markdown, { mode: "markdown" });
+    if (chunks.length === 0) {
+      await clearPreview(chatId);
+      return false;
+    }
+    if (state.mode === "draft") {
+      for (const chunk of chunks) {
+        await callTelegram<TelegramSentMessage>("sendMessage", {
+          chat_id: chatId,
+          text: chunk.text,
+          parse_mode: chunk.parseMode,
+        });
+      }
+      await clearPreview(chatId);
+      return true;
+    }
+    if (state.messageId !== undefined) {
+      const [firstChunk, ...remainingChunks] = chunks;
+      await callTelegram("editMessageText", {
+        chat_id: chatId,
+        message_id: state.messageId,
+        text: firstChunk.text,
+        parse_mode: firstChunk.parseMode,
+      });
+      for (const chunk of remainingChunks) {
+        await callTelegram<TelegramSentMessage>("sendMessage", {
+          chat_id: chatId,
+          text: chunk.text,
+          parse_mode: chunk.parseMode,
+        });
+      }
+      previewState = undefined;
+      return true;
+    }
+    return false;
+  }
+
   async function sendTextReply(
     chatId: number,
     _replyToMessageId: number,
     text: string,
     options?: { parseMode?: "HTML" },
   ): Promise<number | undefined> {
-    if (options?.parseMode) {
-      const sent = await callTelegram<TelegramSentMessage>("sendMessage", {
-        chat_id: chatId,
-        text,
-        parse_mode: options.parseMode,
-      });
-      return sent.message_id;
-    }
-    const chunks = chunkParagraphs(text);
+    const chunks = renderTelegramMessage(text, {
+      mode: options?.parseMode === "HTML" ? "html" : "plain",
+    });
     let lastMessageId: number | undefined;
     for (const chunk of chunks) {
       const sent = await callTelegram<TelegramSentMessage>("sendMessage", {
         chat_id: chatId,
-        text: chunk,
+        text: chunk.text,
+        parse_mode: chunk.parseMode,
+      });
+      lastMessageId = sent.message_id;
+    }
+    return lastMessageId;
+  }
+
+  async function sendMarkdownReply(
+    chatId: number,
+    replyToMessageId: number,
+    markdown: string,
+  ): Promise<number | undefined> {
+    const chunks = renderTelegramMessage(markdown, { mode: "markdown" });
+    if (chunks.length === 0) {
+      return sendTextReply(chatId, replyToMessageId, markdown);
+    }
+    let lastMessageId: number | undefined;
+    for (const chunk of chunks) {
+      const sent = await callTelegram<TelegramSentMessage>("sendMessage", {
+        chat_id: chatId,
+        text: chunk.text,
+        parse_mode: chunk.parseMode,
       });
       lastMessageId = sent.message_id;
     }
@@ -1383,11 +1888,14 @@ export default function (pi: ExtensionAPI) {
     ctx: ExtensionContext,
   ): Promise<void> {
     state.mode = "status";
+    const [rendered] = renderTelegramMessage(buildStatusHtml(ctx), {
+      mode: "html",
+    });
     await callTelegram("editMessageText", {
       chat_id: state.chatId,
       message_id: state.messageId,
-      text: buildStatusHtml(ctx),
-      parse_mode: "HTML",
+      text: rendered?.text ?? "",
+      parse_mode: rendered?.parseMode,
       reply_markup: buildStatusReplyMarkup(ctx),
     });
   }
@@ -1406,10 +1914,13 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     const state = await getModelMenuState(chatId, ctx);
+    const [rendered] = renderTelegramMessage(buildStatusHtml(ctx), {
+      mode: "html",
+    });
     const sent = await callTelegram<TelegramSentMessage>("sendMessage", {
       chat_id: chatId,
-      text: buildStatusHtml(ctx),
-      parse_mode: "HTML",
+      text: rendered?.text ?? "",
+      parse_mode: rendered?.parseMode,
       reply_to_message_id: replyToMessageId,
       reply_markup: buildStatusReplyMarkup(ctx),
     });
@@ -2160,7 +2671,12 @@ export default function (pi: ExtensionAPI) {
       (previewState.pendingText.trim().length > 0 ||
         previewState.lastSentText.trim().length > 0)
     ) {
-      await finalizePreview(activeTelegramTurn.chatId);
+      const previousText = previewState.pendingText.trim();
+      if (previousText.length > 0) {
+        await finalizeMarkdownPreview(activeTelegramTurn.chatId, previousText);
+      } else {
+        await finalizePreview(activeTelegramTurn.chatId);
+      }
     }
     previewState = {
       mode: draftSupport === "unsupported" ? "message" : "draft",
@@ -2210,21 +2726,15 @@ export default function (pi: ExtensionAPI) {
     if (previewState) {
       previewState.pendingText = finalText ?? previewState.pendingText;
     }
-
-    if (finalText && finalText.length <= MAX_MESSAGE_LENGTH) {
-      const finalized = await finalizePreview(turn.chatId);
-      if (!finalized && turn.queuedAttachments.length > 0 && !finalText) {
-        await sendTextReply(
-          turn.chatId,
-          turn.replyToMessageId,
-          "Attached requested file(s).",
-        );
+    if (finalText) {
+      const finalized = await finalizeMarkdownPreview(turn.chatId, finalText);
+      if (!finalized) {
+        await clearPreview(turn.chatId);
+        await sendMarkdownReply(turn.chatId, turn.replyToMessageId, finalText);
       }
     } else {
       await clearPreview(turn.chatId);
-      if (finalText) {
-        await sendTextReply(turn.chatId, turn.replyToMessageId, finalText);
-      } else if (turn.queuedAttachments.length > 0) {
+      if (turn.queuedAttachments.length > 0) {
         await sendTextReply(
           turn.chatId,
           turn.replyToMessageId,
