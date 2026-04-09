@@ -1737,32 +1737,6 @@ export default function (pi: ExtensionAPI) {
     };
   }
 
-  function buildModelMenuText(
-    state: TelegramModelMenuState,
-    currentModel: Model<any> | undefined,
-  ): string {
-    const items = getModelMenuItems(state);
-    const pageCount = Math.max(
-      1,
-      Math.ceil(items.length / TELEGRAM_MODEL_PAGE_SIZE),
-    );
-    const page = Math.min(state.page, pageCount - 1) + 1;
-    const scopeLabel =
-      state.scope === "scoped" && state.scopedModels.length > 0
-        ? "scoped"
-        : "all available";
-    const lines = ["Choose a model"];
-    if (currentModel) {
-      lines.push(`Current: ${getCanonicalModelId(currentModel)}`);
-    }
-    lines.push(`Scope: ${scopeLabel}`);
-    lines.push(`Page: ${page}/${pageCount}`);
-    if (state.note) {
-      lines.push("", state.note);
-    }
-    return lines.join("\n");
-  }
-
   function buildThinkingMenuText(ctx: ExtensionContext): string {
     const activeModel = getCurrentTelegramModel(ctx);
     const lines = ["Choose a thinking level"];
@@ -1865,7 +1839,8 @@ export default function (pi: ExtensionAPI) {
     await callTelegram("editMessageText", {
       chat_id: state.chatId,
       message_id: state.messageId,
-      text: buildModelMenuText(state, activeModel),
+      text: "<b>Choose a model:</b>",
+      parse_mode: "HTML",
       reply_markup: buildModelMenuReplyMarkup(state, activeModel),
     });
   }
@@ -1909,7 +1884,7 @@ export default function (pi: ExtensionAPI) {
       await sendTextReply(
         chatId,
         replyToMessageId,
-        'Cannot open status while pi is busy. Send "stop" first.',
+        "Cannot open status while pi is busy. Send /stop first.",
       );
       return;
     }
@@ -1921,7 +1896,6 @@ export default function (pi: ExtensionAPI) {
       chat_id: chatId,
       text: rendered?.text ?? "",
       parse_mode: rendered?.parseMode,
-      reply_to_message_id: replyToMessageId,
       reply_markup: buildStatusReplyMarkup(ctx),
     });
     state.messageId = sent.message_id;
@@ -1938,7 +1912,7 @@ export default function (pi: ExtensionAPI) {
       await sendTextReply(
         chatId,
         replyToMessageId,
-        'Cannot switch model while pi is busy. Send "stop" first.',
+        "Cannot switch model while pi is busy. Send /stop first.",
       );
       return;
     }
@@ -1954,8 +1928,8 @@ export default function (pi: ExtensionAPI) {
     const activeModel = getCurrentTelegramModel(ctx);
     const sent = await callTelegram<TelegramSentMessage>("sendMessage", {
       chat_id: chatId,
-      text: buildModelMenuText(state, activeModel),
-      reply_to_message_id: replyToMessageId,
+      text: "<b>Choose a model:</b>",
+      parse_mode: "HTML",
       reply_markup: buildModelMenuReplyMarkup(state, activeModel),
     });
     state.messageId = sent.message_id;
@@ -2072,7 +2046,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       if (!ctx.isIdle()) {
-        await answerCallbackQuery(query.id, 'Pi is busy. Send "stop" first.');
+        await answerCallbackQuery(query.id, "Pi is busy. Send /stop first.");
         return;
       }
       const activeModel = getCurrentTelegramModel(ctx);
@@ -2276,7 +2250,7 @@ export default function (pi: ExtensionAPI) {
         await sendTextReply(
           firstMessage.chat.id,
           firstMessage.message_id,
-          'Cannot compact while pi is busy. Send "stop" first.',
+          "Cannot compact while pi is busy. Send /stop first.",
         );
         return;
       }
