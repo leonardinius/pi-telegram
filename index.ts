@@ -127,6 +127,11 @@ interface TelegramSentMessage {
   message_id: number;
 }
 
+interface TelegramBotCommand {
+  command: string;
+  description: string;
+}
+
 interface DownloadedTelegramFile {
   path: string;
   fileName: string;
@@ -508,7 +513,9 @@ function formatScopedModelButtonText(
   entry: ScopedTelegramModel,
   currentModel: Model<any> | undefined,
 ): string {
-  let label = `${modelsMatch(entry.model, currentModel) ? "✅ " : ""}${entry.model.id} [${entry.model.provider}]`;
+  let label = `${modelsMatch(entry.model, currentModel) ? "✅ " : ""}${
+    entry.model.id
+  } [${entry.model.provider}]`;
   if (entry.thinkingLevel) {
     label += ` · ${entry.thinkingLevel}`;
   }
@@ -1003,7 +1010,10 @@ export default function (pi: ExtensionAPI) {
       if (message.document) {
         const fileName =
           message.document.file_name ||
-          `document-${message.message_id}${guessExtensionFromMime(message.document.mime_type, "")}`;
+          `document-${message.message_id}${guessExtensionFromMime(
+            message.document.mime_type,
+            "",
+          )}`;
         files.push({
           file_id: message.document.file_id,
           fileName,
@@ -1014,7 +1024,10 @@ export default function (pi: ExtensionAPI) {
       if (message.video) {
         const fileName =
           message.video.file_name ||
-          `video-${message.message_id}${guessExtensionFromMime(message.video.mime_type, ".mp4")}`;
+          `video-${message.message_id}${guessExtensionFromMime(
+            message.video.mime_type,
+            ".mp4",
+          )}`;
         files.push({
           file_id: message.video.file_id,
           fileName,
@@ -1025,7 +1038,10 @@ export default function (pi: ExtensionAPI) {
       if (message.audio) {
         const fileName =
           message.audio.file_name ||
-          `audio-${message.message_id}${guessExtensionFromMime(message.audio.mime_type, ".mp3")}`;
+          `audio-${message.message_id}${guessExtensionFromMime(
+            message.audio.mime_type,
+            ".mp3",
+          )}`;
         files.push({
           file_id: message.audio.file_id,
           fileName,
@@ -1036,7 +1052,10 @@ export default function (pi: ExtensionAPI) {
       if (message.voice) {
         files.push({
           file_id: message.voice.file_id,
-          fileName: `voice-${message.message_id}${guessExtensionFromMime(message.voice.mime_type, ".ogg")}`,
+          fileName: `voice-${message.message_id}${guessExtensionFromMime(
+            message.voice.mime_type,
+            ".ogg",
+          )}`,
           mimeType: message.voice.mime_type,
           isImage: false,
         });
@@ -1044,7 +1063,10 @@ export default function (pi: ExtensionAPI) {
       if (message.animation) {
         const fileName =
           message.animation.file_name ||
-          `animation-${message.message_id}${guessExtensionFromMime(message.animation.mime_type, ".mp4")}`;
+          `animation-${message.message_id}${guessExtensionFromMime(
+            message.animation.mime_type,
+            ".mp4",
+          )}`;
         files.push({
           file_id: message.animation.file_id,
           fileName,
@@ -1144,6 +1166,23 @@ export default function (pi: ExtensionAPI) {
     } catch {
       // ignore
     }
+  }
+
+  async function registerTelegramBotCommands(): Promise<void> {
+    const commands: TelegramBotCommand[] = [
+      {
+        command: "start",
+        description: "Show help and pair the Telegram bridge",
+      },
+      {
+        command: "status",
+        description: "Show model, usage, cost, and context status",
+      },
+      { command: "model", description: "Open the interactive model selector" },
+      { command: "compact", description: "Compact the current pi session" },
+      { command: "stop", description: "Abort the current pi task" },
+    ];
+    await callTelegram<boolean>("setMyCommands", { commands });
   }
 
   function getCurrentTelegramModel(
@@ -1594,7 +1633,9 @@ export default function (pi: ExtensionAPI) {
       : false;
     if (totalCost || usingSubscription) {
       lines.push(
-        `<b>Cost:</b> <code>${escapeHtml(`$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`)}</code>`,
+        `<b>Cost:</b> <code>${escapeHtml(
+          `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`,
+        )}</code>`,
       );
     }
     if (usage) {
@@ -1603,7 +1644,9 @@ export default function (pi: ExtensionAPI) {
       const percent =
         usage.percent !== null ? `${usage.percent.toFixed(1)}%` : "?";
       lines.push(
-        `<b>Context:</b> <code>${escapeHtml(`${percent}/${formatTokens(contextWindow)}`)}</code>`,
+        `<b>Context:</b> <code>${escapeHtml(
+          `${percent}/${formatTokens(contextWindow)}`,
+        )}</code>`,
       );
     } else {
       lines.push(`<b>Context:</b> <code>unknown</code>`);
@@ -1693,11 +1736,9 @@ export default function (pi: ExtensionAPI) {
       messages
         .map((message) => (message.text || message.caption || "").trim())
         .find((text) => text.length > 0) || "";
-    const lower = rawText.toLowerCase();
     const command = parseTelegramCommand(rawText);
     const commandName = command?.name;
-
-    if (lower === "stop" || commandName === "stop") {
+    if (commandName === "stop") {
       if (currentAbort) {
         if (queuedTelegramTurns.length > 0) {
           preserveQueuedTurnsAsHistory = true;
@@ -1769,10 +1810,20 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (commandName === "help" || commandName === "start") {
+      let helpText = `Send me a message and I will forward it to pi. Commands: /status, /model, /compact, /stop.`;
+      if (commandName === "start") {
+        try {
+          await registerTelegramBotCommands();
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          helpText += `\n\nWarning: failed to register bot commands menu: ${message}`;
+        }
+      }
       await sendTextReply(
         firstMessage.chat.id,
         firstMessage.message_id,
-        `Send me a message and I will forward it to pi. Commands: /status, /model, /compact, stop.`,
+        helpText,
       );
       if (config.allowedUserId === undefined && firstMessage.from) {
         config.allowedUserId = firstMessage.from.id;
@@ -1788,9 +1839,9 @@ export default function (pi: ExtensionAPI) {
     preserveQueuedTurnsAsHistory = false;
     const turn = await createTelegramTurn(messages, historyTurns);
     queuedTelegramTurns.push(turn);
+    updateStatus(ctx);
     if (ctx.isIdle()) {
       startTypingLoop(ctx, turn.chatId);
-      updateStatus(ctx);
       pi.sendUserMessage(turn.content);
     }
   }
@@ -2015,7 +2066,9 @@ export default function (pi: ExtensionAPI) {
     description: "Show Telegram bridge status",
     handler: async (_args, ctx) => {
       const status = [
-        `bot: ${config.botUsername ? `@${config.botUsername}` : "not configured"}`,
+        `bot: ${
+          config.botUsername ? `@${config.botUsername}` : "not configured"
+        }`,
         `allowed user: ${config.allowedUserId ?? "not paired"}`,
         `polling: ${pollingPromise ? "running" : "stopped"}`,
         `active telegram turn: ${activeTelegramTurn ? "yes" : "no"}`,
