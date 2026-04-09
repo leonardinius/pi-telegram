@@ -11,13 +11,13 @@ Telegram DM bridge for pi.
 From git:
 
 ```bash
-pi install git:github.com/badlogic/pi-telegram
+pi install git:github.com/llblab/pi-telegram
 ```
 
 Or for a single run:
 
 ```bash
-pi -e git:github.com/badlogic/pi-telegram
+pi -e git:github.com/llblab/pi-telegram
 ```
 
 ## Configure
@@ -122,6 +122,31 @@ That aborts the active pi turn.
 ### Queue follow-ups
 
 If you send more Telegram messages while pi is busy, they are queued and processed in order.
+
+The pi status bar shows queued Telegram turns as compact previews, for example:
+
+```text
++3: [summarize this image…, write a shell script…, 📎 2 attachments]
+```
+
+Each preview is limited to at most 5 words or 40 characters.
+
+### Reprioritize or discard queued messages
+
+While a message is still waiting in the queue:
+
+- React with 👍 to move it into the priority block
+- React with 👎 to remove it from the queue
+
+Priority is stable:
+
+- The first liked queued message stays ahead of later liked messages
+- Removing 👍 sends the message back to its normal queue position
+- Adding 👍 again gives it a fresh priority position
+
+For media groups, a reaction on any message in the group applies to the whole queued turn.
+
+Message reactions depend on Telegram delivering `message_reaction` updates for your bot and chat type.
 
 ## Streaming
 
