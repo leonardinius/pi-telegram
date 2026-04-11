@@ -110,7 +110,7 @@ Chat with your bot in Telegram DMs.
 Additional fork-specific controls:
 
 - `/status` now has a richer view with inline buttons for model and thinking controls, and joins the high-priority control queue when pi is busy
-- `/model` opens the interactive model selector, joins the high-priority control queue when pi is busy, and can restart the active Telegram-owned run on the newly selected model, waiting for the current tool call to finish when needed
+- `/model` opens the interactive model selector, applies idle selections immediately, joins the high-priority control queue when pi is busy, and can restart the active Telegram-owned run on the newly selected model, waiting for the current tool call to finish when needed
 - `/compact` starts session compaction when pi and the Telegram queue are idle
 - Queue reactions: `👍` prioritizes a waiting turn, `👎` removes it
 

@@ -2467,6 +2467,214 @@ test("Extension runtime applies reaction priority and removal before the next di
   }
 });
 
+test("Extension runtime applies idle model picks immediately and refreshes status", async () => {
+  const agentDir = join(homedir(), ".pi", "agent");
+  const configPath = join(agentDir, "telegram.json");
+  const previousConfig = await readFile(configPath, "utf8").catch(
+    () => undefined,
+  );
+  const previousArgv = [...process.argv];
+  const handlers = new Map<
+    string,
+    (event: unknown, ctx: unknown) => Promise<unknown>
+  >();
+  const commands = new Map<
+    string,
+    { handler: (args: string, ctx: unknown) => Promise<void> }
+  >();
+  const runtimeEvents: string[] = [];
+  const statusEvents: string[] = [];
+  const modelA = {
+    provider: "openai",
+    id: "gpt-a",
+    reasoning: true,
+  } as const;
+  const modelB = {
+    provider: "anthropic",
+    id: "claude-b",
+    reasoning: true,
+  } as const;
+  const setModels: Array<string> = [];
+  const thinkingLevels: Array<string> = [];
+  let secondUpdatesResolve: ((value: Response) => void) | undefined;
+  const secondUpdates = new Promise<Response>((resolve) => {
+    secondUpdatesResolve = resolve;
+  });
+  const pi = {
+    on: (
+      event: string,
+      handler: (event: unknown, ctx: unknown) => Promise<unknown>,
+    ) => {
+      handlers.set(event, handler);
+    },
+    registerCommand: (
+      name: string,
+      definition: { handler: (args: string, ctx: unknown) => Promise<void> },
+    ) => {
+      commands.set(name, definition);
+    },
+    registerTool: () => {},
+    sendUserMessage: () => {},
+    getThinkingLevel: () => thinkingLevels.at(-1) ?? "medium",
+    setModel: async (model: { provider: string; id: string }) => {
+      setModels.push(`${model.provider}/${model.id}`);
+      return true;
+    },
+    setThinkingLevel: (level: string) => {
+      thinkingLevels.push(level);
+    },
+  } as never;
+  const originalFetch = globalThis.fetch;
+  let getUpdatesCalls = 0;
+  let nextMessageId = 100;
+  const callbackAnswers: string[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const method = url.split("/").at(-1) ?? "";
+    const body =
+      typeof init?.body === "string"
+        ? (JSON.parse(init.body) as Record<string, unknown>)
+        : undefined;
+    if (method === "deleteWebhook") {
+      return { json: async () => ({ ok: true, result: true }) } as Response;
+    }
+    if (method === "getUpdates") {
+      getUpdatesCalls += 1;
+      if (getUpdatesCalls === 1) {
+        return {
+          json: async () => ({
+            ok: true,
+            result: [
+              {
+                _: "other",
+                update_id: 1,
+                message: {
+                  message_id: 60,
+                  chat: { id: 99, type: "private" },
+                  from: { id: 77, is_bot: false, first_name: "Test" },
+                  text: "/model",
+                },
+              },
+            ],
+          }),
+        } as Response;
+      }
+      if (getUpdatesCalls === 2) return secondUpdates;
+      throw new DOMException("stop", "AbortError");
+    }
+    if (method === "sendMessage") {
+      runtimeEvents.push(`send:${String(body?.text ?? "")}`);
+      return {
+        json: async () => ({
+          ok: true,
+          result: { message_id: nextMessageId++ },
+        }),
+      } as Response;
+    }
+    if (method === "editMessageText") {
+      runtimeEvents.push(`edit:${String(body?.text ?? "")}`);
+      return { json: async () => ({ ok: true, result: true }) } as Response;
+    }
+    if (method === "answerCallbackQuery") {
+      callbackAnswers.push(String(body?.text ?? ""));
+      return { json: async () => ({ ok: true, result: true }) } as Response;
+    }
+    if (method === "sendChatAction") {
+      return { json: async () => ({ ok: true, result: true }) } as Response;
+    }
+    throw new Error(`Unexpected Telegram API method: ${method}`);
+  };
+  try {
+    process.argv = [
+      previousArgv[0] ?? "node",
+      previousArgv[1] ?? "index.ts",
+      "--models=anthropic/claude-b:high",
+    ];
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      configPath,
+      JSON.stringify(
+        { botToken: "123:abc", allowedUserId: 77, lastUpdateId: 0 },
+        null,
+        "\t",
+      ) + "\n",
+      "utf8",
+    );
+    telegramExtension(pi);
+    const ctx = {
+      hasUI: true,
+      cwd: process.cwd(),
+      model: modelA,
+      signal: undefined,
+      ui: {
+        theme: {
+          fg: (_token: string, text: string) => text,
+        },
+        setStatus: (_slot: string, text: string) => {
+          statusEvents.push(text);
+        },
+        notify: () => {},
+      },
+      sessionManager: {
+        getEntries: () => [],
+      },
+      modelRegistry: {
+        refresh: () => {},
+        getAvailable: () => [modelA, modelB],
+        isUsingOAuth: () => false,
+      },
+      getContextUsage: () => undefined,
+      hasPendingMessages: () => false,
+      isIdle: () => true,
+      abort: () => {},
+    } as never;
+    await handlers.get("session_start")?.({}, ctx);
+    await commands.get("telegram-connect")?.handler("", ctx);
+    await waitForCondition(() =>
+      runtimeEvents.some((event) => event === "send:<b>Choose a model:</b>"),
+    );
+    const statusCountBeforePick = statusEvents.length;
+    secondUpdatesResolve?.({
+      json: async () => ({
+        ok: true,
+        result: [
+          {
+            _: "other",
+            update_id: 2,
+            callback_query: {
+              id: "cb-idle-1",
+              from: { id: 77, is_bot: false, first_name: "Test" },
+              data: "model:pick:0",
+              message: {
+                message_id: 100,
+                chat: { id: 99, type: "private" },
+              },
+            },
+          },
+        ],
+      }),
+    } as Response);
+    await waitForCondition(() => setModels.length === 1);
+    assert.deepEqual(setModels, ["anthropic/claude-b"]);
+    assert.deepEqual(thinkingLevels, ["high"]);
+    assert.equal(callbackAnswers.includes("Switched to claude-b"), true);
+    assert.equal(statusEvents.length > statusCountBeforePick, true);
+    assert.equal(
+      runtimeEvents.some((event) => event.startsWith("edit:<b>Context:")),
+      true,
+    );
+    await handlers.get("session_shutdown")?.({}, ctx);
+  } finally {
+    process.argv = previousArgv;
+    globalThis.fetch = originalFetch;
+    if (previousConfig === undefined) {
+      await rm(configPath, { force: true });
+    } else {
+      await writeFile(configPath, previousConfig, "utf8");
+    }
+  }
+});
+
 test("Extension runtime switches model in flight and dispatches a continuation turn after abort", async () => {
   const agentDir = join(homedir(), ".pi", "agent");
   const configPath = join(agentDir, "telegram.json");

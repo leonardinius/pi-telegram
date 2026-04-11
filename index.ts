@@ -1180,7 +1180,10 @@ export default function (pi: ExtensionAPI) {
       query.data,
       getCurrentTelegramModel(ctx),
       {
-        setThinkingLevel: (level) => pi.setThinkingLevel(level),
+        setThinkingLevel: (level) => {
+          pi.setThinkingLevel(level);
+          updateStatus(ctx);
+        },
         getCurrentThinkingLevel: () => pi.getThinkingLevel(),
         updateStatusMessage: async () => showStatusMessage(state, ctx),
         answerCallbackQuery,
@@ -1213,10 +1216,15 @@ export default function (pi: ExtensionAPI) {
           setModel: (model) => pi.setModel(model),
           setCurrentModel: (model) => {
             currentTelegramModel = model;
+            updateStatus(ctx);
           },
-          setThinkingLevel: (level) => pi.setThinkingLevel(level),
+          setThinkingLevel: (level) => {
+            pi.setThinkingLevel(level);
+            updateStatus(ctx);
+          },
           stagePendingModelSwitch: (selection) => {
             pendingTelegramModelSwitch = selection;
+            updateStatus(ctx);
           },
           restartInterruptedTelegramTurn: (selection) => {
             return restartTelegramModelSwitchContinuation({
@@ -1825,8 +1833,9 @@ export default function (pi: ExtensionAPI) {
         systemPrompt: nextEvent.systemPrompt + suffix,
       };
     },
-    onModelSelect: (event) => {
+    onModelSelect: (event, ctx) => {
       currentTelegramModel = (event as { model: Model<any> }).model;
+      updateStatus(ctx);
     },
     onAgentStart: async (_event, ctx) => {
       currentAbort = () => ctx.abort();
