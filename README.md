@@ -30,7 +30,7 @@ In short: this fork is no longer just a repackaged copy of upstream; it is a fea
 
 ## Install
 
-From npm once published:
+From npm:
 
 ```bash
 pi install npm:@llblab/pi-telegram
