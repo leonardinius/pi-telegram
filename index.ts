@@ -259,6 +259,15 @@ export default function (pi: Pi.ExtensionAPI) {
         message.message_id,
         "Project create: reply with `NAME node|static [PORT]`, e.g. `my-app node 18082`",
       );
+    } else if (action.kind === "delete") {
+      projectsRuntime.requestDelete(message.chat.id, action.name);
+      notice = `❌😵 Danger: delete app '${action.name}'?`;
+      await answerCallbackQuery(query.id, `DANGER: confirm delete ${action.name}`);
+      await sendTextReply(
+        message.chat.id,
+        message.message_id,
+        `Danger: delete app '${action.name}'. Reply: delete ${action.name} or cancel`,
+      );
     } else if (action.kind === "up" || action.kind === "down" || action.kind === "health") {
       const result = await projectsRuntime.run([action.kind, action.name]);
       notice = `<b>${result.ok ? "OK" : "Failed"} / ${action.kind} ${action.name}</b>\n<code>${result.text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</code>`;
@@ -431,6 +440,26 @@ export default function (pi: Pi.ExtensionAPI) {
               ctx: Pi.ExtensionContext,
             ): Promise<void> => {
               const first = messages?.[0];
+              if (first) {
+                const pendingDeleteName = projectsRuntime.consumePendingDelete(
+                  first.chat.id,
+                  first.text || first.caption || "",
+                );
+                if (pendingDeleteName !== undefined) {
+                  if (!pendingDeleteName) {
+                    await sendTextReply(first.chat.id, first.message_id, "Project delete cancelled.");
+                  } else {
+                    const result = await projectsRuntime.deleteProject(pendingDeleteName);
+                    await sendTextReply(
+                      first.chat.id,
+                      first.message_id,
+                      `${result.ok ? "OK" : "Failed"}: project delete ${pendingDeleteName}\n${result.text}`,
+                    );
+                  }
+                  await sendProjectsMenu(first.chat.id);
+                  return;
+                }
+              }
               if (first && projectsRuntime.hasPendingCreate(first.chat.id)) {
                 const result = await projectsRuntime.consumePendingCreate(
                   first.chat.id,
