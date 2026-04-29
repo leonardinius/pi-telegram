@@ -292,8 +292,11 @@ export default function (pi: Pi.ExtensionAPI) {
       await answerCallbackQuery(query.id, "⏳ Processing...");
       try {
         const result = await projectsRuntime.run([action.kind, action.name]);
-        notice = `<b>${result.ok ? "OK" : "Failed"} / ${action.kind} ${action.name}</b>\n<code>${Projects.htmlEscape(result.text)}</code>`;
-        const plainNotice = `${result.ok ? "OK" : "Failed"}: project ${action.kind} ${action.name}\n${result.text}`;
+        const projectInfo = (await projectsRuntime.list()).find((p) => p.name === action.name);
+        const urlLine = projectInfo?.url ? `\nurl: ${projectInfo.url}` : "";
+        const publicUrlLine = projectInfo?.publicUrl ? `\npublic url: ${projectInfo.publicUrl}` : "";
+        notice = `<b>${result.ok ? "OK" : "Failed"} / ${action.kind} ${action.name}</b>\n<code>${Projects.htmlEscape(result.text)}</code>${Projects.htmlEscape(urlLine)}${Projects.htmlEscape(publicUrlLine)}`;
+        const plainNotice = `${result.ok ? "OK" : "Failed"}: project ${action.kind} ${action.name}\n${result.text}${urlLine}${publicUrlLine}`;
         await sendTextReply(message.chat.id, message.message_id, plainNotice);
       } catch (error) {
         notice = `<b>Error</b>\n<code>${Projects.htmlEscape(String(error))}</code>`;
