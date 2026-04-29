@@ -27,7 +27,6 @@ export type TelegramProjectsCallbackAction =
   | { kind: "up"; name: string }
   | { kind: "down"; name: string }
   | { kind: "health"; name: string }
-  | { kind: "delete"; name: string }
   | { kind: "create-help" };
 
 const DEFAULT_ROOT = "/home/agent/work/projects";
@@ -70,7 +69,7 @@ export function parseTelegramProjectsCallbackData(data?: string): TelegramProjec
   const [, action, name = ""] = data.split(":");
   if (action === "refresh") return { kind: "refresh" };
   if (action === "create") return { kind: "create-help" };
-  if ((action === "up" || action === "down" || action === "health" || action === "delete") && PROJECT_NAME_RE.test(name)) {
+  if ((action === "up" || action === "down" || action === "health") && PROJECT_NAME_RE.test(name)) {
     return { kind: action, name };
   }
   return { kind: "ignore" };
@@ -81,7 +80,6 @@ export class TelegramProjectsRuntime {
   readonly projectBin: string;
   readonly publicBaseUrl?: string;
   private readonly pendingCreateChats = new Set<number>();
-  private readonly pendingDeleteByChat = new Map<number, string>();
 
   constructor(options: TelegramProjectsRuntimeOptions = {}) {
     this.root = options.root || process.env.WORK_PROJECTS_ROOT || DEFAULT_ROOT;
@@ -99,25 +97,6 @@ export class TelegramProjectsRuntime {
 
   cancelPendingCreate(chatId: number): void {
     this.pendingCreateChats.delete(chatId);
-  }
-
-  requestDelete(chatId: number, name: string): void {
-    this.pendingDeleteByChat.set(chatId, name);
-  }
-
-  consumePendingDelete(chatId: number, text: string): string | undefined {
-    const name = this.pendingDeleteByChat.get(chatId);
-    if (!name) return undefined;
-    const normalized = text.trim().toLowerCase();
-    if (normalized === `delete ${name}` || normalized === `удалить ${name}`) {
-      this.pendingDeleteByChat.delete(chatId);
-      return name;
-    }
-    if (normalized === "cancel" || normalized === "отмена") {
-      this.pendingDeleteByChat.delete(chatId);
-      return "";
-    }
-    return undefined;
   }
 
   async consumePendingCreate(chatId: number, text: string): Promise<TelegramProjectsActionResult | undefined> {
@@ -171,23 +150,6 @@ export class TelegramProjectsRuntime {
     };
   }
 
-  async deleteProject(name: string): Promise<TelegramProjectsActionResult> {
-    if (!PROJECT_NAME_RE.test(name)) return { ok: false, text: "bad project name" };
-    const projectPath = join(this.root, name);
-    const composePath = join(projectPath, "compose.yaml");
-    try {
-      await fs.stat(composePath);
-    } catch {
-      return { ok: false, text: `project not found: ${name}` };
-    }
-    const down = await this.run(["down", name]);
-    if (!down.ok && !/not found|no configuration file/i.test(down.text)) {
-      return { ok: false, text: `down failed:\n${down.text}` };
-    }
-    await fs.rm(projectPath, { recursive: true, force: true });
-    return { ok: true, text: `deleted folder: ${projectPath}` };
-  }
-
   async renderHtml(): Promise<string> {
     const projects = await this.list();
     const lines = ["<b>Projects</b>"];
@@ -220,9 +182,6 @@ export class TelegramProjectsRuntime {
         { text: "▶️ Start", callback_data: `proj:up:${project.name}` },
         { text: "⏹ Stop", callback_data: `proj:down:${project.name}` },
         { text: "🩺 Health", callback_data: `proj:health:${project.name}` },
-      ]);
-      rows.push([
-        { text: "❌😵 DELETE APP", callback_data: `proj:delete:${project.name}` },
       ]);
     }
     return { inline_keyboard: rows };
