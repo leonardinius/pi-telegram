@@ -33,7 +33,6 @@ export interface PiSettingsManager {
 
 export interface PiExtensionApiRuntimePorts {
   sendUserMessage: ExtensionAPI["sendUserMessage"];
-  exec: ExtensionAPI["exec"];
   getThinkingLevel: ExtensionAPI["getThinkingLevel"];
   setThinkingLevel: ExtensionAPI["setThinkingLevel"];
   setModel: ExtensionAPI["setModel"];
@@ -42,16 +41,11 @@ export interface PiExtensionApiRuntimePorts {
 export function createExtensionApiRuntimePorts(
   api: Pick<
     ExtensionAPI,
-    | "sendUserMessage"
-    | "exec"
-    | "getThinkingLevel"
-    | "setThinkingLevel"
-    | "setModel"
+    "sendUserMessage" | "getThinkingLevel" | "setThinkingLevel" | "setModel"
   >,
 ): PiExtensionApiRuntimePorts {
   return {
-    sendUserMessage: (content) => api.sendUserMessage(content),
-    exec: (command, args, options) => api.exec(command, args, options),
+    sendUserMessage: (content, options) => api.sendUserMessage(content, options),
     getThinkingLevel: () => api.getThinkingLevel(),
     setThinkingLevel: (level) => api.setThinkingLevel(level),
     setModel: (model) => api.setModel(model),

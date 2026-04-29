@@ -1100,7 +1100,6 @@ export interface TelegramPromptEnqueueControllerDeps<
   createTurn: (
     messages: TMessage[],
     historyTurns: PendingTelegramTurn[],
-    ctx: TContext,
   ) => Promise<PendingTelegramTurn>;
   updateStatus: (ctx: TContext) => void;
   dispatchNextQueuedTelegramTurn: (ctx: TContext) => void;
@@ -1366,8 +1365,6 @@ export function createTelegramPromptEnqueueController<
     enqueue: (messages, ctx) =>
       enqueueTelegramPromptTurnRuntime(messages, {
         ...deps,
-        createTurn: (nextMessages, historyTurns) =>
-          deps.createTurn(nextMessages, historyTurns, ctx),
         updateStatus: () => deps.updateStatus(ctx),
         dispatchNextQueuedTelegramTurn: () =>
           deps.dispatchNextQueuedTelegramTurn(ctx),

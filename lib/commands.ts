@@ -32,6 +32,11 @@ export const TELEGRAM_BOT_COMMANDS: readonly TelegramBotCommandDefinition[] = [
   { command: "model", description: "Open the interactive model selector" },
   { command: "compact", description: "Compact the current pi session" },
   { command: "stop", description: "Abort the current pi task" },
+  {
+    command: "tgreload",
+    description: "Smoke-test pi and reload extensions",
+  },
+  { command: "extensions", description: "List available pi slash commands" },
 ];
 
 export interface TelegramBotCommandRegistrationDeps {
@@ -56,8 +61,10 @@ export type TelegramCommandAction =
   | { kind: "ignore"; executionMode: "ignored" }
   | { kind: "stop"; executionMode: "immediate" }
   | { kind: "compact"; executionMode: "immediate" }
+  | { kind: "autoReload"; executionMode: "immediate" }
   | { kind: "status"; executionMode: "control-queue" }
   | { kind: "model"; executionMode: "control-queue" }
+  | { kind: "extensions"; executionMode: "immediate" }
   | {
       kind: "help";
       commandName: "help" | "start";
@@ -72,13 +79,65 @@ export type TelegramCommandExecutionMode =
 export interface TelegramCommandActionDeps<TMessage, TContext> {
   handleStop: (message: TMessage, ctx: TContext) => Promise<void>;
   handleCompact: (message: TMessage, ctx: TContext) => Promise<void>;
+  handleAutoReload: (message: TMessage, ctx: TContext) => Promise<void>;
   handleStatus: (message: TMessage, ctx: TContext) => Promise<void>;
   handleModel: (message: TMessage, ctx: TContext) => Promise<void>;
+  handleExtensions: (message: TMessage, ctx: TContext) => Promise<void>;
   handleHelp: (
     message: TMessage,
     commandName: "help" | "start",
     ctx: TContext,
   ) => Promise<void>;
+}
+
+export interface TelegramAutoReloadSmokeTestResult {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+  error?: string;
+}
+
+export interface TelegramAutoReloadCommandDeps<TMessage, TContext> {
+  runSmokeTest: (cwd: string) => Promise<TelegramAutoReloadSmokeTestResult>;
+  tailText: (text: string) => string;
+  getCwd: (ctx: TContext) => string;
+  isIdle: (ctx: TContext) => boolean;
+  sendReloadCommand: (
+    command: string,
+    options?: { deliverAs?: "steer" | "followUp" },
+  ) => void;
+  sendTextReply: (message: TMessage, text: string) => Promise<void>;
+}
+
+export function createTelegramAutoReloadCommandHandler<TMessage, TContext>(
+  deps: TelegramAutoReloadCommandDeps<TMessage, TContext>,
+): (message: TMessage, ctx: TContext) => Promise<void> {
+  return async (message, ctx) => {
+    await deps.sendTextReply(message, "tgreload: running pi -p ping (Telegram autostart disabled)");
+    const result = await deps.runSmokeTest(deps.getCwd(ctx));
+    if (!result.ok) {
+      const details = [
+        result.error ? `error: ${result.error}` : "",
+        result.stderr ? `stderr:\n${deps.tailText(result.stderr)}` : "",
+        result.stdout ? `stdout:\n${deps.tailText(result.stdout)}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      await deps.sendTextReply(
+        message,
+        `tgreload: smoke test failed\n${details}`,
+      );
+      return;
+    }
+    await deps.sendTextReply(
+      message,
+      "tgreload: smoke test passed; reloading",
+    );
+    deps.sendReloadCommand(
+      "/telegram-tgreload-now",
+      deps.isIdle(ctx) ? undefined : { deliverAs: "followUp" },
+    );
+  };
 }
 
 export interface TelegramStopCommandDeps {
@@ -325,6 +384,7 @@ export interface TelegramCommandRuntimeDeps<
   hasQueuedTelegramItems: () => boolean;
   setPreserveQueuedTurnsAsHistory: (preserve: boolean) => void;
   abortCurrentTurn: () => void;
+  handleAutoReload: (message: TMessage, ctx: TContext) => Promise<void>;
   isIdle: (ctx: TContext) => boolean;
   hasPendingMessages: (ctx: TContext) => boolean;
   hasActiveTelegramTurn: () => boolean;
@@ -351,10 +411,11 @@ export interface TelegramCommandRuntimeDeps<
   registerBotCommands: () => Promise<void>;
   persistConfig: () => Promise<void>;
   sendTextReply: (message: TMessage, text: string) => Promise<void>;
+  handleExtensions: (message: TMessage, ctx: TContext) => Promise<void>;
 }
 
 export const TELEGRAM_HELP_TEXT =
-  "Send me a message and I will forward it to pi. Commands: /status, /model, /compact, /stop.";
+  "Send me a message and I will forward it to pi. Commands: /status, /model, /compact, /stop, /tgreload, /extensions.";
 
 function getTelegramCommandErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -379,10 +440,14 @@ export function buildTelegramCommandAction(
       return { kind: "stop", executionMode: "immediate" };
     case "compact":
       return { kind: "compact", executionMode: "immediate" };
+    case "tgreload":
+      return { kind: "autoReload", executionMode: "immediate" };
     case "status":
       return { kind: "status", executionMode: "control-queue" };
     case "model":
       return { kind: "model", executionMode: "control-queue" };
+    case "extensions":
+      return { kind: "extensions", executionMode: "immediate" };
     case "help":
     case "start":
       return { kind: "help", commandName, executionMode: "immediate" };
@@ -514,11 +579,17 @@ export async function executeTelegramCommandAction<TMessage, TContext>(
     case "compact":
       await deps.handleCompact(message, ctx);
       return true;
+    case "autoReload":
+      await deps.handleAutoReload(message, ctx);
+      return true;
     case "status":
       await deps.handleStatus(message, ctx);
       return true;
     case "model":
       await deps.handleModel(message, ctx);
+      return true;
+    case "extensions":
+      await deps.handleExtensions(message, ctx);
       return true;
     case "help":
       await deps.handleHelp(message, action.commandName, ctx);
@@ -575,6 +646,7 @@ export function createTelegramCommandHandlerTargetRuntime<
     hasQueuedTelegramItems: deps.hasQueuedTelegramItems,
     setPreserveQueuedTurnsAsHistory: deps.setPreserveQueuedTurnsAsHistory,
     abortCurrentTurn: deps.abortCurrentTurn,
+    handleAutoReload: deps.handleAutoReload,
     isIdle: deps.isIdle,
     hasPendingMessages: deps.hasPendingMessages,
     hasActiveTelegramTurn: deps.hasActiveTelegramTurn,
@@ -595,6 +667,7 @@ export function createTelegramCommandHandlerTargetRuntime<
     persistConfig: deps.persistConfig,
     sendTextReply: commandTargetRuntime.sendTextReply,
     recordRuntimeEvent: deps.recordRuntimeEvent,
+    handleExtensions: deps.handleExtensions,
   });
 }
 
@@ -692,6 +765,7 @@ async function handleTelegramCommandRuntime<
           recordRuntimeEvent: deps.recordRuntimeEvent,
         });
       },
+      handleAutoReload: deps.handleAutoReload,
       handleStatus: async (nextMessage, commandCtx) => {
         await handleTelegramStatusCommand<TContext>({
           enqueueControlItem: enqueueControlFor(nextMessage, commandCtx),
@@ -705,6 +779,7 @@ async function handleTelegramCommandRuntime<
             deps.openModelMenu(nextMessage, controlCtx),
         });
       },
+      handleExtensions: deps.handleExtensions,
       handleHelp: async (nextMessage, nextCommandName, commandCtx) => {
         await handleTelegramHelpCommand(nextCommandName, {
           senderUserId: nextMessage.from?.id,

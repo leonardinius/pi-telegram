@@ -3,8 +3,6 @@
  * Normalizes inbound Telegram messages into reusable file, text, id, history, and media-group metadata
  */
 
-import { basename, dirname } from "node:path";
-
 const TELEGRAM_MEDIA_GROUP_DEBOUNCE_MS = 1200;
 
 export interface TelegramPhotoSize {
@@ -91,20 +89,10 @@ export interface TelegramMediaGroupControllerOptions {
   clearTimer?: (timer: ReturnType<typeof setTimeout>) => void;
 }
 
-export type TelegramAttachmentKind =
-  | "photo"
-  | "document"
-  | "video"
-  | "audio"
-  | "voice"
-  | "animation"
-  | "sticker";
-
 export interface TelegramFileInfo {
   file_id: string;
   fileName: string;
   mimeType?: string;
-  kind: TelegramAttachmentKind;
   isImage: boolean;
 }
 
@@ -113,7 +101,6 @@ export interface DownloadedTelegramFile {
   fileName?: string;
   isImage?: boolean;
   mimeType?: string;
-  kind?: TelegramAttachmentKind;
 }
 
 export interface DownloadedTelegramMessageFile {
@@ -121,7 +108,6 @@ export interface DownloadedTelegramMessageFile {
   fileName: string;
   isImage: boolean;
   mimeType?: string;
-  kind?: TelegramAttachmentKind;
 }
 
 export interface DownloadTelegramMessageFilesDeps {
@@ -295,39 +281,17 @@ export function createTelegramMediaGroupDispatchRuntime<
   };
 }
 
-function appendTelegramListSection(
-  text: string,
-  title: string,
-  items: string[],
-): string {
-  if (items.length === 0) return text;
-  const prefix = text.length > 0 ? `${text}\n\n` : "";
-  return `${prefix}[${title}]\n${items.map((item) => `- ${item}`).join("\n")}`;
-}
-
-function appendTelegramAttachmentSection(
-  text: string,
-  files: Pick<DownloadedTelegramFile, "path">[],
-): string {
-  if (files.length === 0) return text;
-  const dirs = [...new Set(files.map((file) => dirname(file.path)))];
-  const sameDir = dirs.length === 1;
-  const header = sameDir ? `[attachments] ${dirs[0]}` : "[attachments]";
-  const items = sameDir
-    ? files.map((file) => `/${basename(file.path)}`)
-    : files.map((file) => file.path);
-  const prefix = text.length > 0 ? `${text}\n\n` : "";
-  return `${prefix}${header}\n${items.map((item) => `- ${item}`).join("\n")}`;
-}
-
 export function formatTelegramHistoryText(
   rawText: string,
   files: DownloadedTelegramFile[],
-  handlerOutputs: string[] = [],
 ): string {
   let summary = rawText.length > 0 ? rawText : "(no text)";
-  summary = appendTelegramAttachmentSection(summary, files);
-  summary = appendTelegramListSection(summary, "outputs", handlerOutputs);
+  if (files.length > 0) {
+    summary += `\nAttachments:`;
+    for (const file of files) {
+      summary += `\n- ${file.path}`;
+    }
+  }
   return summary;
 }
 
@@ -342,7 +306,6 @@ export async function downloadTelegramMessageFiles(
       fileName: file.fileName,
       isImage: file.isImage,
       mimeType: file.mimeType,
-      kind: file.kind,
     });
   }
   return downloaded;
@@ -362,7 +325,6 @@ export function collectTelegramFileInfos(
           file_id: photo.file_id,
           fileName: `photo-${message.message_id}.jpg`,
           mimeType: "image/jpeg",
-          kind: "photo",
           isImage: true,
         });
       }
@@ -378,7 +340,6 @@ export function collectTelegramFileInfos(
         file_id: message.document.file_id,
         fileName,
         mimeType: message.document.mime_type,
-        kind: "document",
         isImage: isImageMimeType(message.document.mime_type),
       });
     }
@@ -393,7 +354,6 @@ export function collectTelegramFileInfos(
         file_id: message.video.file_id,
         fileName,
         mimeType: message.video.mime_type,
-        kind: "video",
         isImage: false,
       });
     }
@@ -408,7 +368,6 @@ export function collectTelegramFileInfos(
         file_id: message.audio.file_id,
         fileName,
         mimeType: message.audio.mime_type,
-        kind: "audio",
         isImage: false,
       });
     }
@@ -420,7 +379,6 @@ export function collectTelegramFileInfos(
           ".ogg",
         )}`,
         mimeType: message.voice.mime_type,
-        kind: "voice",
         isImage: false,
       });
     }
@@ -435,7 +393,6 @@ export function collectTelegramFileInfos(
         file_id: message.animation.file_id,
         fileName,
         mimeType: message.animation.mime_type,
-        kind: "animation",
         isImage: false,
       });
     }
@@ -444,7 +401,6 @@ export function collectTelegramFileInfos(
         file_id: message.sticker.file_id,
         fileName: `sticker-${message.message_id}.webp`,
         mimeType: "image/webp",
-        kind: "sticker",
         isImage: true,
       });
     }

@@ -5,19 +5,10 @@
 
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
-import type { TelegramAttachmentHandlerConfig } from "./handlers.ts";
-
-function getAgentDir(): string {
-  return process.env.PI_CODING_AGENT_DIR
-    ? resolve(process.env.PI_CODING_AGENT_DIR)
-    : join(homedir(), ".pi", "agent");
-}
-
-function getConfigPath(): string {
-  return join(getAgentDir(), "telegram.json");
-}
+const AGENT_DIR = join(homedir(), ".pi", "agent");
+const CONFIG_PATH = join(AGENT_DIR, "telegram.json");
 
 export interface TelegramConfig {
   botToken?: string;
@@ -25,7 +16,6 @@ export interface TelegramConfig {
   botId?: number;
   allowedUserId?: number;
   lastUpdateId?: number;
-  attachmentHandlers?: TelegramAttachmentHandlerConfig[];
 }
 
 export interface TelegramConfigStore {
@@ -35,7 +25,6 @@ export interface TelegramConfigStore {
   getBotToken: () => string | undefined;
   hasBotToken: () => boolean;
   getAllowedUserId: () => number | undefined;
-  getAttachmentHandlers: () => TelegramAttachmentHandlerConfig[] | undefined;
   setAllowedUserId: (userId: number) => void;
   load: () => Promise<void>;
   persist: (config?: TelegramConfig) => Promise<void>;
@@ -75,8 +64,8 @@ export function createTelegramConfigStore(
   options: TelegramConfigStoreOptions = {},
 ): TelegramConfigStore {
   let config: TelegramConfig = options.initialConfig ?? {};
-  const agentDir = options.agentDir ?? getAgentDir();
-  const configPath = options.configPath ?? getConfigPath();
+  const agentDir = options.agentDir ?? AGENT_DIR;
+  const configPath = options.configPath ?? CONFIG_PATH;
   return {
     get: () => config,
     set: (nextConfig) => {
@@ -88,7 +77,6 @@ export function createTelegramConfigStore(
     getBotToken: () => config.botToken,
     hasBotToken: () => !!config.botToken,
     getAllowedUserId: () => config.allowedUserId,
-    getAttachmentHandlers: () => config.attachmentHandlers,
     setAllowedUserId: (userId) => {
       config.allowedUserId = userId;
     },

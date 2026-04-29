@@ -273,6 +273,12 @@ export interface TelegramBridgeApiRuntime {
   editMessageText: (
     body: TelegramEditMessageTextBody,
   ) => Promise<"edited" | "unchanged">;
+  addMessageReaction: (
+    chatId: number,
+    messageId: number,
+    reaction: TelegramReactionType[],
+    options?: { isBig?: boolean },
+  ) => Promise<boolean>;
   answerCallbackQuery: (
     callbackQueryId: string,
     text?: string,
@@ -744,6 +750,13 @@ export function createTelegramBridgeApiRuntime(
         throw error;
       }
     },
+    addMessageReaction: (chatId, messageId, reaction, options) =>
+      callRecorded<boolean>("setMessageReaction", {
+        chat_id: chatId,
+        message_id: messageId,
+        reaction,
+        ...(options?.isBig ? { is_big: true } : {}),
+      }),
     answerCallbackQuery: (callbackQueryId, text) => {
       return deps.client.answerCallbackQuery(callbackQueryId, text);
     },

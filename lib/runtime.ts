@@ -3,7 +3,122 @@
  * Owns small session-local runtime primitives that are shared by orchestration but are not specific to queueing, rendering, polling, or Telegram transport
  */
 
+import { execFile, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 const TELEGRAM_TYPING_ACTION_INTERVAL_MS = 4000;
+const AUTO_RELOAD_SMOKE_TIMEOUT_MS = 60_000;
+
+export interface TelegramPiSmokeTestResult {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+  error?: string;
+}
+
+export function tailTelegramRuntimeText(text: string, max = 1200): string {
+  if (text.length <= max) return text;
+  return text.slice(text.length - max);
+}
+
+export function runPiPingSmokeTest(
+  cwd: string,
+): Promise<TelegramPiSmokeTestResult> {
+  return new Promise((resolve) => {
+    const home = process.env.HOME || ".";
+    const defaultPiPath = join(home, ".npm-global", "bin", "pi");
+    const piCmd = existsSync(defaultPiPath) ? defaultPiPath : "pi";
+    const args = ["--no-session", "--offline", "-p", "ping"];
+    const baseEnv = {
+      HOME: home,
+      USER: process.env.USER || "agent",
+      PATH: `${home}/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin`,
+      PI_TELEGRAM_AUTOSTART: "0",
+      PI_OFFLINE: "1",
+      RTK_DISABLE: "1",
+      PI_TUI: "0",
+      PI_MEMORY_RECALL: "0",
+    } as NodeJS.ProcessEnv;
+    const cwdPrimary = existsSync(cwd) ? cwd : process.cwd();
+    const cwdFallback = home;
+
+    const runOnce = (useCwd: string): Promise<TelegramPiSmokeTestResult> =>
+      new Promise((res) => {
+        const child = spawn(piCmd, args, {
+          cwd: useCwd,
+          env: baseEnv,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        let out = "";
+        let err = "";
+        let sawPong = false;
+        const timer = setTimeout(() => {
+          try { child.kill("SIGTERM"); } catch {}
+        }, AUTO_RELOAD_SMOKE_TIMEOUT_MS);
+        child.stdout?.on("data", (chunk) => {
+          const text = String(chunk);
+          out += text;
+          if (!sawPong && /pong/i.test(text)) sawPong = true;
+        });
+        child.stderr?.on("data", (chunk) => {
+          err += String(chunk);
+        });
+        child.on("close", (code, signal) => {
+          clearTimeout(timer);
+          const hasExtensionError = err.includes("Extension error");
+          if (sawPong || (code === 0 && /pong/i.test(out))) {
+            res({ ok: true, stdout: out, stderr: err });
+            return;
+          }
+          const parts = [
+            code !== null && code !== undefined ? `code=${code}` : "",
+            signal ? `signal=${signal}` : "",
+            `cwd=${useCwd}`,
+            `piCmd=${piCmd}`,
+          ].filter(Boolean);
+          res({
+            ok: false,
+            stdout: out,
+            stderr: err,
+            error: hasExtensionError
+              ? "pi smoke test reported extension errors"
+              : parts.join(" "),
+          });
+        });
+        child.on("error", (error) => {
+          clearTimeout(timer);
+          res({ ok: false, stdout: out, stderr: err, error: (error as Error).message });
+        });
+      });
+
+    (async () => {
+      const first = await runOnce(cwdPrimary);
+      if (first.ok) {
+        resolve(first);
+        return;
+      }
+      const needRetry = first.stderr.trim().length === 0 && cwdPrimary !== cwdFallback;
+      if (!needRetry) {
+        resolve(first);
+        return;
+      }
+      const second = await runOnce(cwdFallback);
+      if (second.ok) {
+        resolve(second);
+        return;
+      }
+      resolve({
+        ok: false,
+        stdout: second.stdout || first.stdout,
+        stderr: second.stderr || first.stderr,
+        error: second.error || first.error,
+      });
+    })().catch((err) => {
+      resolve({ ok: false, stdout: "", stderr: "", error: String(err) });
+    });
+  });
+}
 
 export interface TelegramRuntimeQueueCounters {
   nextQueuedTelegramItemOrder: number;
