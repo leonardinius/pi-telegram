@@ -23,20 +23,21 @@ export interface TelegramBotCommandDefinition {
 export const TELEGRAM_BOT_COMMANDS: readonly TelegramBotCommandDefinition[] = [
   {
     command: "start",
-    description: "Show help and pair the Telegram bridge",
+    description: "🚀 Start, help, and pair Telegram",
   },
   {
     command: "status",
-    description: "Show model, usage, cost, and context status",
+    description: "📊 Show model, usage, cost, and context",
   },
-  { command: "model", description: "Open the interactive model selector" },
-  { command: "compact", description: "Compact the current pi session" },
-  { command: "stop", description: "Abort the current pi task" },
+  { command: "model", description: "🧠 Open model selector" },
+  { command: "compact", description: "🧹 Compact current pi session" },
+  { command: "stop", description: "🛑 Abort current pi task" },
+  { command: "extensions", description: "🧩 List available pi commands" },
+  { command: "projects", description: "📦 Manage local projects" },
   {
     command: "tgreload",
-    description: "Smoke-test pi and reload extensions",
+    description: "🔄 Smoke-test pi and reload extensions",
   },
-  { command: "extensions", description: "List available pi slash commands" },
 ];
 
 export interface TelegramBotCommandRegistrationDeps {
@@ -65,6 +66,7 @@ export type TelegramCommandAction =
   | { kind: "status"; executionMode: "control-queue" }
   | { kind: "model"; executionMode: "control-queue" }
   | { kind: "extensions"; executionMode: "immediate" }
+  | { kind: "projects"; executionMode: "immediate" }
   | {
       kind: "help";
       commandName: "help" | "start";
@@ -79,10 +81,11 @@ export type TelegramCommandExecutionMode =
 export interface TelegramCommandActionDeps<TMessage, TContext> {
   handleStop: (message: TMessage, ctx: TContext) => Promise<void>;
   handleCompact: (message: TMessage, ctx: TContext) => Promise<void>;
-  handleAutoReload: (message: TMessage, ctx: TContext) => Promise<void>;
+  handleAutoReload?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleStatus: (message: TMessage, ctx: TContext) => Promise<void>;
   handleModel: (message: TMessage, ctx: TContext) => Promise<void>;
-  handleExtensions: (message: TMessage, ctx: TContext) => Promise<void>;
+  handleExtensions?: (message: TMessage, ctx: TContext) => Promise<void>;
+  handleProjects?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleHelp: (
     message: TMessage,
     commandName: "help" | "start",
@@ -384,7 +387,7 @@ export interface TelegramCommandRuntimeDeps<
   hasQueuedTelegramItems: () => boolean;
   setPreserveQueuedTurnsAsHistory: (preserve: boolean) => void;
   abortCurrentTurn: () => void;
-  handleAutoReload: (message: TMessage, ctx: TContext) => Promise<void>;
+  handleAutoReload?: (message: TMessage, ctx: TContext) => Promise<void>;
   isIdle: (ctx: TContext) => boolean;
   hasPendingMessages: (ctx: TContext) => boolean;
   hasActiveTelegramTurn: () => boolean;
@@ -411,11 +414,12 @@ export interface TelegramCommandRuntimeDeps<
   registerBotCommands: () => Promise<void>;
   persistConfig: () => Promise<void>;
   sendTextReply: (message: TMessage, text: string) => Promise<void>;
-  handleExtensions: (message: TMessage, ctx: TContext) => Promise<void>;
+  handleExtensions?: (message: TMessage, ctx: TContext) => Promise<void>;
+  handleProjects?: (message: TMessage, ctx: TContext) => Promise<void>;
 }
 
 export const TELEGRAM_HELP_TEXT =
-  "Send me a message and I will forward it to pi. Commands: /status, /model, /compact, /stop, /tgreload, /extensions.";
+  "Send me a message and I will forward it to pi. Commands: /status, /model, /projects, /compact, /stop, /extensions, /tgreload.";
 
 function getTelegramCommandErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -448,6 +452,8 @@ export function buildTelegramCommandAction(
       return { kind: "model", executionMode: "control-queue" };
     case "extensions":
       return { kind: "extensions", executionMode: "immediate" };
+    case "projects":
+      return { kind: "projects", executionMode: "immediate" };
     case "help":
     case "start":
       return { kind: "help", commandName, executionMode: "immediate" };
@@ -580,6 +586,7 @@ export async function executeTelegramCommandAction<TMessage, TContext>(
       await deps.handleCompact(message, ctx);
       return true;
     case "autoReload":
+      if (!deps.handleAutoReload) return false;
       await deps.handleAutoReload(message, ctx);
       return true;
     case "status":
@@ -589,7 +596,12 @@ export async function executeTelegramCommandAction<TMessage, TContext>(
       await deps.handleModel(message, ctx);
       return true;
     case "extensions":
+      if (!deps.handleExtensions) return false;
       await deps.handleExtensions(message, ctx);
+      return true;
+    case "projects":
+      if (!deps.handleProjects) return false;
+      await deps.handleProjects(message, ctx);
       return true;
     case "help":
       await deps.handleHelp(message, action.commandName, ctx);
@@ -668,6 +680,7 @@ export function createTelegramCommandHandlerTargetRuntime<
     sendTextReply: commandTargetRuntime.sendTextReply,
     recordRuntimeEvent: deps.recordRuntimeEvent,
     handleExtensions: deps.handleExtensions,
+    handleProjects: deps.handleProjects,
   });
 }
 
@@ -780,6 +793,7 @@ async function handleTelegramCommandRuntime<
         });
       },
       handleExtensions: deps.handleExtensions,
+      handleProjects: deps.handleProjects,
       handleHelp: async (nextMessage, nextCommandName, commandCtx) => {
         await handleTelegramHelpCommand(nextCommandName, {
           senderUserId: nextMessage.from?.id,

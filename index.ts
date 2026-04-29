@@ -13,6 +13,7 @@ import * as Model from "./lib/model.ts";
 import * as Pi from "./lib/pi.ts";
 import * as Polling from "./lib/polling.ts";
 import * as Preview from "./lib/preview.ts";
+import * as Projects from "./lib/projects.ts";
 import * as Queue from "./lib/queue.ts";
 import * as Registration from "./lib/registration.ts";
 import * as Replies from "./lib/replies.ts";
@@ -50,6 +51,7 @@ export default function (pi: Pi.ExtensionAPI) {
     Media.createTelegramMediaGroupController<Api.TelegramMessage>();
   const telegramQueueStore =
     Queue.createTelegramQueueStore<Pi.ExtensionContext>();
+  const projectsRuntime = new Projects.TelegramProjectsRuntime();
   const pollingControllerState = Polling.createTelegramPollingControllerState();
   const { getStatusLines, updateStatus } =
     Status.createTelegramBridgeStatusRuntime<
@@ -207,9 +209,75 @@ export default function (pi: Pi.ExtensionAPI) {
       getCwd: Pi.getExtensionContextCwd,
       isIdle: Pi.isExtensionContextIdle,
       sendReloadCommand: piRuntime.sendUserMessage,
-      sendTextReply: (message, text) =>
-        sendTextReply(message.chat.id, message.message_id, text),
+      sendTextReply: async (message, text) => {
+        await sendTextReply(message.chat.id, message.message_id, text);
+      },
     });
+
+  const sendProjectsMenu = async (chatId: number): Promise<void> => {
+    await sendInteractiveMessage(
+      chatId,
+      await projectsRuntime.renderHtml(),
+      "html",
+      await projectsRuntime.replyMarkup(),
+    );
+  };
+
+  const handleProjectsCommand = async (
+    message: Api.TelegramMessage,
+  ): Promise<void> => {
+    const rawText = message.text || message.caption || "";
+    const argsText = rawText.replace(/^\/projects(?:@\w+)?\s*/i, "").trim();
+    const result = await projectsRuntime.handleTextCommand(argsText);
+    if (result) {
+      await sendTextReply(
+        message.chat.id,
+        message.message_id,
+        `${result.ok ? "OK" : "Failed"}: ${result.text}`,
+      );
+    }
+    await sendProjectsMenu(message.chat.id);
+  };
+
+  const handleProjectsCallback = async (
+    query: Api.TelegramCallbackQuery,
+  ): Promise<boolean> => {
+    const action = Projects.parseTelegramProjectsCallbackData(query.data);
+    if (action.kind === "ignore") return false;
+    const message = query.message;
+    if (!message?.chat?.id || !message.message_id) {
+      await answerCallbackQuery(query.id, "Missing Telegram message context.");
+      return true;
+    }
+    let notice = "";
+    if (action.kind === "create-help") {
+      projectsRuntime.requestCreate(message.chat.id);
+      notice = "Create: reply with <code>NAME node|static [PORT]</code>, e.g. <code>my-app node 18082</code>";
+      await answerCallbackQuery(query.id, "Reply with: NAME node|static [PORT]");
+      await sendTextReply(
+        message.chat.id,
+        message.message_id,
+        "Project create: reply with `NAME node|static [PORT]`, e.g. `my-app node 18082`",
+      );
+    } else if (action.kind === "up" || action.kind === "down" || action.kind === "health") {
+      const result = await projectsRuntime.run([action.kind, action.name]);
+      notice = `<b>${result.ok ? "OK" : "Failed"} / ${action.kind} ${action.name}</b>\n<code>${result.text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</code>`;
+      const plainNotice = `${result.ok ? "OK" : "Failed"}: project ${action.kind} ${action.name}\n${result.text}`;
+      await answerCallbackQuery(query.id, `${result.ok ? "OK" : "Failed"}: ${result.text}`.slice(0, 180));
+      await sendTextReply(message.chat.id, message.message_id, plainNotice);
+    } else {
+      await answerCallbackQuery(query.id);
+    }
+    const menuHtml = await projectsRuntime.renderHtml();
+    await editInteractiveMessage(
+      message.chat.id,
+      message.message_id,
+      notice ? `${menuHtml}\n\n${notice}` : menuHtml,
+      "html",
+      await projectsRuntime.replyMarkup(),
+    );
+    return true;
+  };
 
   // --- Polling ---
 
@@ -239,8 +307,9 @@ export default function (pi: Pi.ExtensionAPI) {
       prioritizeQueuedTelegramTurnByMessageId:
         queueMutationRuntime.prioritizeByMessageId,
       answerCallbackQuery,
-      handleAuthorizedTelegramCallbackQuery:
-        Menu.createTelegramMenuCallbackHandlerForContext<
+      handleAuthorizedTelegramCallbackQuery: async (query, ctx) => {
+        if (await handleProjectsCallback(query)) return;
+        await Menu.createTelegramMenuCallbackHandlerForContext<
           Api.TelegramCallbackQuery,
           Pi.ExtensionContext,
           ActivePiModel
@@ -264,7 +333,8 @@ export default function (pi: Pi.ExtensionAPI) {
           stagePendingModelSwitch: modelSwitchController.stagePendingSwitch,
           restartInterruptedTelegramTurn:
             modelSwitchController.restartInterruptedTurn,
-        }),
+        })(query, ctx);
+      },
       sendTextReply,
       handleAuthorizedTelegramMessage:
         Media.createTelegramMediaGroupDispatchRuntime<
@@ -310,6 +380,7 @@ export default function (pi: Pi.ExtensionAPI) {
               persistConfig: configStore.persist,
               sendTextReply,
               recordRuntimeEvent: runtimeEvents.record,
+              handleProjects: handleProjectsCommand,
               // New: /extensions command — list available PI slash commands excluding BTW
               handleExtensions: async (message, _ctx) => {
                 try {
@@ -360,6 +431,21 @@ export default function (pi: Pi.ExtensionAPI) {
               ctx: Pi.ExtensionContext,
             ): Promise<void> => {
               const first = messages?.[0];
+              if (first && projectsRuntime.hasPendingCreate(first.chat.id)) {
+                const result = await projectsRuntime.consumePendingCreate(
+                  first.chat.id,
+                  first.text || first.caption || "",
+                );
+                if (result) {
+                  await sendTextReply(
+                    first.chat.id,
+                    first.message_id,
+                    `${result.ok ? "OK" : "Failed"}: project create\n${result.text}`,
+                  );
+                  await sendProjectsMenu(first.chat.id);
+                  return;
+                }
+              }
               // Extension-level ACK: put a salute reaction under the user's message (no text).
               if (first) {
                 // Reactions under user messages are disabled by policy.
