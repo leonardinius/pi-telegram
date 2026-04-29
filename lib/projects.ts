@@ -27,7 +27,8 @@ export type TelegramProjectsCallbackAction =
   | { kind: "up"; name: string }
   | { kind: "down"; name: string }
   | { kind: "health"; name: string }
-  | { kind: "create-help" };
+  | { kind: "create-help" }
+  | { kind: "delete"; name: string };
 
 const DEFAULT_ROOT = "/home/agent/work/projects";
 const DEFAULT_PROJECT_BIN = "/home/agent/work/agent/bin/project";
@@ -66,9 +67,11 @@ function trimOutput(value: string, max = 1200): string {
 
 export function parseTelegramProjectsCallbackData(data?: string): TelegramProjectsCallbackAction {
   if (!data?.startsWith("proj:")) return { kind: "ignore" };
+  // allow delete action via callback data
   const [, action, name = ""] = data.split(":");
   if (action === "refresh") return { kind: "refresh" };
   if (action === "create") return { kind: "create-help" };
+  if (action === "delete") return { kind: "delete", name }; // Handle delete action
   if ((action === "up" || action === "down" || action === "health") && PROJECT_NAME_RE.test(name)) {
     return { kind: action, name };
   }
@@ -76,10 +79,39 @@ export function parseTelegramProjectsCallbackData(data?: string): TelegramProjec
 }
 
 export class TelegramProjectsRuntime {
+  // Pending deletes: chatId → projectName
+  private readonly pendingDeleteChats = new Map<number, string>();
+
+  /**
+   * Start delete flow: ask for user confirmation
+   */
+  requestDelete(chatId: number, name: string): void {
+    this.pendingDeleteChats.set(chatId, name);
+  }
+
+  /**
+   * Handle user reply for delete confirmation
+   * returns project name when confirmed,
+   * empty string when cancelled or mismatch,
+   * undefined when no pending delete
+   */
+  consumePendingDelete(chatId: number, text: string): string | undefined {
+    if (!this.pendingDeleteChats.has(chatId)) return undefined;
+    const name = this.pendingDeleteChats.get(chatId)!;
+    this.pendingDeleteChats.delete(chatId);
+    const typed = text.trim().toLowerCase();
+    if (typed === `delete ${name}`) return name;
+    // any other reply aborts
+    return "";
+  }
+  // store pending delete requests: chatId -> projectName
+  private readonly pendingDeleteChats = new Map<number, string>();
+
   readonly root: string;
   readonly projectBin: string;
   readonly publicBaseUrl?: string;
   private readonly pendingCreateChats = new Set<number>();
+  private readonly pendingDeleteChats = new Map<number, string>();
 
   constructor(options: TelegramProjectsRuntimeOptions = {}) {
     this.root = options.root || process.env.WORK_PROJECTS_ROOT || DEFAULT_ROOT;
@@ -150,6 +182,28 @@ export class TelegramProjectsRuntime {
     };
   }
 
+  /**
+   * Delete a project folder permanently.
+   */
+  async deleteProject(name: string): Promise<TelegramProjectsActionResult> {
+    const projectPath = join(this.root, name);
+    // First, stop and remove Docker containers
+    const down = await shellOut(this.projectBin, ["down", name]);
+    // Then, delete the project folder
+    const rm = await shellOut("rm", ["-rf", projectPath]);
+    // Aggregate output
+    const parts: string[] = [];
+    if (down.stdout) parts.push(down.stdout.trim());
+    if (down.stderr) parts.push(down.stderr.trim());
+    if (rm.stdout) parts.push(rm.stdout.trim());
+    if (rm.stderr) parts.push(rm.stderr.trim());
+    const text = parts.join("\n");
+    return {
+      ok: down.code === 0 && rm.code === 0,
+      text: text || `Deleted ${name}`,
+    };
+  }
+
   async renderHtml(): Promise<string> {
     const projects = await this.list();
     const lines = ["<b>Projects</b>"];
@@ -176,12 +230,16 @@ export class TelegramProjectsRuntime {
         { text: "➕ Create project", callback_data: "proj:create" },
       ],
     ];
+    // For each project, add health row, controls row, and delete button row
     for (const project of projects.slice(0, 10)) {
       rows.push([{ text: `📦 ${project.name}`, callback_data: `proj:health:${project.name}` }]);
       rows.push([
         { text: "▶️ Start", callback_data: `proj:up:${project.name}` },
         { text: "⏹ Stop", callback_data: `proj:down:${project.name}` },
         { text: "🩺 Health", callback_data: `proj:health:${project.name}` },
+      ]);
+      rows.push([
+        { text: "❌😵 DELETE APP", callback_data: `proj:delete:${project.name}` },
       ]);
     }
     return { inline_keyboard: rows };

@@ -260,13 +260,14 @@ export default function (pi: Pi.ExtensionAPI) {
         "Project create: reply with `NAME node|static [PORT]`, e.g. `my-app node 18082`",
       );
     } else if (action.kind === "delete") {
+      // Begin delete flow: ask for irreversible confirmation
       projectsRuntime.requestDelete(message.chat.id, action.name);
-      notice = `❌😵 Danger: delete app '${action.name}'?`;
-      await answerCallbackQuery(query.id, `DANGER: confirm delete ${action.name}`);
+      notice = `☠️❌ IRREVERSIBLE: delete app '${action.name}'?`;
+      await answerCallbackQuery(query.id, `Confirm delete ${action.name}`);
       await sendTextReply(
         message.chat.id,
         message.message_id,
-        `Danger: delete app '${action.name}'. Reply: delete ${action.name} or cancel`,
+        `☠️❌ IRREVERSIBLE\nDelete app '${action.name}'?\nReply: delete ${action.name} or cancel`,
       );
     } else if (action.kind === "up" || action.kind === "down" || action.kind === "health") {
       const result = await projectsRuntime.run([action.kind, action.name]);
