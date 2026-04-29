@@ -102,6 +102,7 @@ export interface TelegramAutoReloadCommandDeps<TMessage, TContext> {
   runSmokeTest: (cwd: string) => Promise<TelegramAutoReloadSmokeTestResult>;
   tailText: (text: string) => string;
   getCwd: (ctx: TContext) => string;
+  isIdle: (ctx: TContext) => boolean;
   sendReloadCommand: (
     command: string,
     options?: { deliverAs?: "steer" | "followUp" },
@@ -133,7 +134,10 @@ export function createTelegramAutoReloadCommandHandler<TMessage, TContext>(
       message,
       "tgreload: smoke test passed; reloading",
     );
-    deps.sendReloadCommand("/telegram-tgreload-now");
+    deps.sendReloadCommand(
+      "/telegram-tgreload-now",
+      deps.isIdle(ctx) ? undefined : { deliverAs: "followUp" },
+    );
   };
 }
 
