@@ -38,6 +38,10 @@ export const TELEGRAM_BOT_COMMANDS: readonly TelegramBotCommandDefinition[] = [
     command: "tgreload",
     description: "🔄 Smoke-test pi and reload extensions",
   },
+  {
+    command: "telegram-tgreload-now",
+    description: "🔄 Smoke-test pi and reload extensions (now)",
+  },
 ];
 
 export interface TelegramBotCommandRegistrationDeps {
@@ -445,6 +449,7 @@ export function buildTelegramCommandAction(
     case "compact":
       return { kind: "compact", executionMode: "immediate" };
     case "tgreload":
+    case "telegram-tgreload-now":
       return { kind: "autoReload", executionMode: "immediate" };
     case "status":
       return { kind: "status", executionMode: "control-queue" };

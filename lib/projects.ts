@@ -53,7 +53,7 @@ function shellOut(command: string, args: string[], cwd?: string): Promise<{ code
   });
 }
 
-function htmlEscape(value: string): string {
+export function htmlEscape(value: string): string {
   return value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -72,7 +72,7 @@ export function parseTelegramProjectsCallbackData(data?: string): TelegramProjec
   if (action === "refresh") return { kind: "refresh" };
   if (action === "create") return { kind: "create-help" };
   if (action === "delete") return { kind: "delete", name }; // Handle delete action
-  if ((action === "up" || action === "down" || action === "health") && PROJECT_NAME_RE.test(name)) {
+  if ((action === "up" || action === "down" || action === "health" || action === "logs") && PROJECT_NAME_RE.test(name)) {
     return { kind: action, name };
   }
   return { kind: "ignore" };
@@ -177,6 +177,19 @@ export class TelegramProjectsRuntime {
   }
 
   /**
+   * Fetch last N lines of logs (non-streaming).
+   */
+  async fetchLogs(name: string, lines = 100): Promise<TelegramProjectsActionResult> {
+    const projectPath = join(this.root, name);
+    const result = await shellOut("docker", ["compose", "--env-file", ".env", "-f", "compose.yaml", "logs", `--tail=${lines}`], projectPath);
+    const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+    return {
+      ok: result.code === 0,
+      text: trimOutput(output || `exit=${result.code}`),
+    };
+  }
+
+  /**
    * Delete a project folder permanently.
    */
   async deleteProject(name: string): Promise<TelegramProjectsActionResult> {
@@ -226,11 +239,11 @@ export class TelegramProjectsRuntime {
     ];
     // For each project, add health row, controls row, and delete button row
     for (const project of projects.slice(0, 10)) {
-      rows.push([{ text: `📦 ${project.name}`, callback_data: `proj:health:${project.name}` }]);
+      rows.push([{ text: `🖥️ ${project.name}`, callback_data: `proj:health:${project.name}` }]);
       rows.push([
         { text: "▶️ Start", callback_data: `proj:up:${project.name}` },
         { text: "⏹ Stop", callback_data: `proj:down:${project.name}` },
-        { text: "🩺 Health", callback_data: `proj:health:${project.name}` },
+        { text: "🗒 Logs", callback_data: `proj:logs:${project.name}` },
       ]);
       rows.push([
         { text: "❌😵 DELETE APP", callback_data: `proj:delete:${project.name}` },

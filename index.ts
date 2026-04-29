@@ -262,19 +262,34 @@ export default function (pi: Pi.ExtensionAPI) {
     } else if (action.kind === "delete") {
       // Begin delete flow: ask for irreversible confirmation
       projectsRuntime.requestDelete(message.chat.id, action.name);
-      notice = `☠️❌ IRREVERSIBLE: delete app '${action.name}'?`;
-      await answerCallbackQuery(query.id, `Confirm delete ${action.name}`);
+      notice = `☠️❌ IRREVERSIBLE\nDelete app '${action.name}'?\nReply: delete ${action.name} or cancel`;
       await sendTextReply(
         message.chat.id,
         message.message_id,
         `☠️❌ IRREVERSIBLE\nDelete app '${action.name}'?\nReply: delete ${action.name} or cancel`,
       );
+    } else if (action.kind === "logs") {
+      await answerCallbackQuery(query.id, "⏳ Fetching logs...");
+      try {
+        const result = await projectsRuntime.fetchLogs(action.name);
+        notice = `<b>${result.ok ? "OK" : "Failed"} / logs ${action.name}</b>\n<code>${Projects.htmlEscape(result.text)}</code>`;
+        const plainNotice = `${result.ok ? "OK" : "Failed"}: project logs ${action.name}\n${result.text}`;
+        await sendTextReply(message.chat.id, message.message_id, plainNotice);
+      } catch (error) {
+        notice = `<b>Error fetching logs</b>\n<code>${Projects.htmlEscape(String(error))}</code>`;
+        await sendTextReply(message.chat.id, message.message_id, `Error: ${String(error)}`);
+      }
     } else if (action.kind === "up" || action.kind === "down" || action.kind === "health") {
-      const result = await projectsRuntime.run([action.kind, action.name]);
-      notice = `<b>${result.ok ? "OK" : "Failed"} / ${action.kind} ${action.name}</b>\n<code>${result.text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</code>`;
-      const plainNotice = `${result.ok ? "OK" : "Failed"}: project ${action.kind} ${action.name}\n${result.text}`;
-      await answerCallbackQuery(query.id, `${result.ok ? "OK" : "Failed"}: ${result.text}`.slice(0, 180));
-      await sendTextReply(message.chat.id, message.message_id, plainNotice);
+      await answerCallbackQuery(query.id, "⏳ Processing...");
+      try {
+        const result = await projectsRuntime.run([action.kind, action.name]);
+        notice = `<b>${result.ok ? "OK" : "Failed"} / ${action.kind} ${action.name}</b>\n<code>${Projects.htmlEscape(result.text)}</code>`;
+        const plainNotice = `${result.ok ? "OK" : "Failed"}: project ${action.kind} ${action.name}\n${result.text}`;
+        await sendTextReply(message.chat.id, message.message_id, plainNotice);
+      } catch (error) {
+        notice = `<b>Error</b>\n<code>${Projects.htmlEscape(String(error))}</code>`;
+        await sendTextReply(message.chat.id, message.message_id, `Error: ${String(error)}`);
+      }
     } else {
       await answerCallbackQuery(query.id);
     }
