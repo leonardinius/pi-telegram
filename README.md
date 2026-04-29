@@ -25,7 +25,11 @@ This repository is an actively maintained fork of [`badlogic/pi-telegram`](https
 
 Install this fork from the private GitHub repo over SSH. Run the command as the same user that runs pi.
 
-Prerequisite: the host must have a GitHub SSH key or deploy key with read access to `leonardinius/pi-telegram`. Verify first:
+Prerequisite: the host must have a GitHub SSH key or deploy key with read access to `leonardinius/pi-telegram`.
+
+### Personal SSH key
+
+Verify access:
 
 ```bash
 ssh -T git@github.com
@@ -43,10 +47,40 @@ Pinning to a tag or commit is recommended for servers:
 pi install git:git@github.com:leonardinius/pi-telegram@<tag-or-commit>
 ```
 
-If the host uses an SSH alias in `~/.ssh/config`, replace `github.com` with that alias:
+### Repo deploy key
+
+For servers, prefer a repo-scoped GitHub deploy key added to this private repo with read access only. Configure an SSH host alias for the user that runs pi:
+
+```sshconfig
+Host github.com-pi-telegram-deploy
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/github_deploy_key
+  IdentitiesOnly yes
+```
+
+Verify the deploy key:
 
 ```bash
-pi install git:git@github.com-pi-telegram:leonardinius/pi-telegram
+ssh -T github.com-pi-telegram-deploy
+```
+
+Expected success text is similar to:
+
+```text
+Hi leonardinius/pi-telegram! You've successfully authenticated, but GitHub does not provide shell access.
+```
+
+Install using the alias:
+
+```bash
+pi install git:git@github.com-pi-telegram-deploy:leonardinius/pi-telegram
+```
+
+Pinning also works with the alias:
+
+```bash
+pi install git:git@github.com-pi-telegram-deploy:leonardinius/pi-telegram@<tag-or-commit>
 ```
 
 For local development, install the checkout directly:
