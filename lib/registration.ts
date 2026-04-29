@@ -147,18 +147,35 @@ export function registerTelegramCommands(
 }
 
 export function registerTelegramAutoReloadCommand(pi: ExtensionAPI): void {
+  pi.registerCommand("telegram-tgreload-now", {
+    description: "Reload extensions after a Telegram /tgreload smoke test",
+    handler: async (_args, ctx) => {
+      await ctx.reload();
+      return;
+    },
+  });
+
   pi.registerCommand("tgreload", {
     description: "Smoke-test pi and reload extensions",
     handler: async (_args, ctx) => {
       const cwd = ctx.cwd ?? process.cwd();
-      const result: TelegramAutoReloadSmokeTestResult = await runPiPingSmokeTest(cwd);
+      const result: TelegramAutoReloadSmokeTestResult =
+        await runPiPingSmokeTest(cwd);
       if (!result.ok) {
         const details = [
           result.error ? `error: ${result.error}` : "",
-          result.stderr ? `stderr:\n${tailTelegramRuntimeText(result.stderr)}` : "",
-          result.stdout ? `stdout:\n${tailTelegramRuntimeText(result.stdout)}` : "",
-        ].filter(Boolean).join("\n\n");
-        return { content: [{ type: "text", text: `Smoke test failed\n${details}` }] };
+          result.stderr
+            ? `stderr:\n${tailTelegramRuntimeText(result.stderr)}`
+            : "",
+          result.stdout
+            ? `stdout:\n${tailTelegramRuntimeText(result.stdout)}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+        return {
+          content: [{ type: "text", text: `Smoke test failed\n${details}` }],
+        };
       }
       await ctx.reload();
       return { content: [{ type: "text", text: "Reloaded after smoke test" }] };

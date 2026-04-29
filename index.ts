@@ -199,6 +199,21 @@ export default function (pi: Pi.ExtensionAPI) {
     sendInteractiveMessage,
   });
 
+  const handleAutoReloadCommand =
+    Commands.createTelegramAutoReloadCommandHandler<
+      Api.TelegramMessage,
+      Pi.ExtensionContext
+    >({
+      runSmokeTest: Runtime.runPiPingSmokeTest,
+      tailText: Runtime.tailTelegramRuntimeText,
+      getCwd: Pi.getExtensionContextCwd,
+      isIdle: Pi.isExtensionContextIdle,
+      sendReloadCommand: piRuntime.sendUserMessage,
+      sendTextReply: async (message, text) => {
+        await sendTextReply(message.chat.id, message.message_id, text);
+      },
+    });
+
   const sendProjectsMenu = async (chatId: number): Promise<void> => {
     await sendInteractiveMessage(
       chatId,
@@ -367,6 +382,7 @@ export default function (pi: Pi.ExtensionAPI) {
               setPreserveQueuedTurnsAsHistory:
                 bridgeRuntime.lifecycle.setPreserveQueuedTurnsAsHistory,
               abortCurrentTurn: bridgeRuntime.abort.abortTurn,
+              handleAutoReload: handleAutoReloadCommand,
               isIdle: Pi.isExtensionContextIdle,
               hasPendingMessages: Pi.hasExtensionContextPendingMessages,
               hasActiveTelegramTurn: activeTurnRuntime.has,
