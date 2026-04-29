@@ -207,7 +207,6 @@ export default function (pi: Pi.ExtensionAPI) {
       runSmokeTest: Runtime.runPiPingSmokeTest,
       tailText: Runtime.tailTelegramRuntimeText,
       getCwd: Pi.getExtensionContextCwd,
-      isIdle: Pi.isExtensionContextIdle,
       sendReloadCommand: piRuntime.sendUserMessage,
       sendTextReply: async (message, text) => {
         await sendTextReply(message.chat.id, message.message_id, text);
