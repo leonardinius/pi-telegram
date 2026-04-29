@@ -23,16 +23,36 @@ This repository is an actively maintained fork of [`badlogic/pi-telegram`](https
 
 ## Install
 
-From npm:
+Install this fork from the private GitHub repo over SSH. Run the command as the same user that runs pi.
+
+Prerequisite: the host must have a GitHub SSH key or deploy key with read access to `leonardinius/pi-telegram`. Verify first:
 
 ```bash
-pi install npm:@llblab/pi-telegram
+ssh -T git@github.com
 ```
 
-From git:
+Install the latest default branch:
 
 ```bash
-pi install git:github.com/llblab/pi-telegram
+pi install git:git@github.com:leonardinius/pi-telegram
+```
+
+Pinning to a tag or commit is recommended for servers:
+
+```bash
+pi install git:git@github.com:leonardinius/pi-telegram@<tag-or-commit>
+```
+
+If the host uses an SSH alias in `~/.ssh/config`, replace `github.com` with that alias:
+
+```bash
+pi install git:git@github.com-pi-telegram:leonardinius/pi-telegram
+```
+
+For local development, install the checkout directly:
+
+```bash
+pi install /absolute/path/to/pi-telegram
 ```
 
 ## Configure
