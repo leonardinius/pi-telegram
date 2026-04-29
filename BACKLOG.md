@@ -2,7 +2,7 @@
 
 ## Active Backlog
 
-_No active backlog items._
+- Define and enforce a stable, user-friendly sort order for Telegram menu items (model picker, actions, and any future project menus).
 
 ## Reopen Triggers
 
