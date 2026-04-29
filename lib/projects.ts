@@ -7,6 +7,7 @@ export interface TelegramProjectInfo {
   path: string;
   port?: string;
   url?: string;
+  publicUrl?: string;
   status: string;
 }
 
@@ -14,6 +15,7 @@ export interface TelegramProjectsRuntimeOptions {
   root?: string;
   projectBin?: string;
   publicBaseUrl?: string;
+  configPath?: string;
 }
 
 export interface TelegramProjectsActionResult {
@@ -33,6 +35,12 @@ export type TelegramProjectsCallbackAction =
 const DEFAULT_ROOT = "/home/agent/work/projects";
 const DEFAULT_PROJECT_BIN = "/home/agent/work/agent/bin/project";
 const PROJECT_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
+const DEFAULT_PROJECTS_CONFIG_PATH = join(
+  process.env.HOME || "/home/agent",
+  ".pi",
+  "agent",
+  "projects.json",
+);
 
 function envValue(text: string, key: string): string | undefined {
   const line = text.split(/\r?\n/).find((entry) => entry.startsWith(`${key}=`));
@@ -82,6 +90,7 @@ export class TelegramProjectsRuntime {
   readonly root: string;
   readonly projectBin: string;
   readonly publicBaseUrl?: string;
+  readonly configPath: string;
   private readonly pendingCreateChats = new Set<number>();
   private readonly pendingDeleteChats = new Map<number, string>();
 
@@ -110,7 +119,22 @@ export class TelegramProjectsRuntime {
   constructor(options: TelegramProjectsRuntimeOptions = {}) {
     this.root = options.root || process.env.WORK_PROJECTS_ROOT || DEFAULT_ROOT;
     this.projectBin = options.projectBin || process.env.PI_PROJECT_BIN || DEFAULT_PROJECT_BIN;
+    this.configPath = options.configPath || process.env.PI_PROJECTS_CONFIG_PATH || DEFAULT_PROJECTS_CONFIG_PATH;
     this.publicBaseUrl = options.publicBaseUrl || process.env.PI_PROJECTS_PUBLIC_BASE_URL;
+  }
+
+  private async getResolvedPublicBaseUrl(): Promise<string | undefined> {
+    if (this.publicBaseUrl) return this.publicBaseUrl;
+    try {
+      const raw = await fs.readFile(this.configPath, "utf8");
+      const parsed = JSON.parse(raw) as { publicBaseUrl?: unknown };
+      if (typeof parsed.publicBaseUrl === "string" && parsed.publicBaseUrl.trim()) {
+        return parsed.publicBaseUrl.trim();
+      }
+    } catch {
+      // optional config, ignore
+    }
+    return undefined;
   }
 
   requestCreate(chatId: number): void {
@@ -160,9 +184,11 @@ export class TelegramProjectsRuntime {
       } catch {}
       const ps = await shellOut("docker", ["compose", "--env-file", ".env", "-f", "compose.yaml", "ps", "--format", "{{.Service}} {{.Status}}"], path);
       const status = ps.code === 0 && ps.stdout.trim() ? ps.stdout.trim().replace(/\n/g, "; ") : "stopped";
-      const base = this.publicBaseUrl?.replace(/\/$/, "");
-      const url = port ? (base ? `${base}:${port}/` : `http://127.0.0.1:${port}/`) : undefined;
-      projects.push({ name, path, port, url, status });
+      const resolvedBase = await this.getResolvedPublicBaseUrl();
+      const base = resolvedBase?.replace(/\/$/, "");
+      const url = port ? `http://127.0.0.1:${port}/` : undefined;
+      const publicUrl = base ? `https://${name}.${base.replace(/^https?:\/\//, "")}/` : undefined;
+      projects.push({ name, path, port, url, publicUrl, status });
     }
     return projects;
   }
@@ -222,6 +248,7 @@ export class TelegramProjectsRuntime {
           `\n<b>${htmlEscape(project.name)}</b>`,
           `status: <code>${htmlEscape(project.status)}</code>`,
           project.url ? `url: <code>${htmlEscape(project.url)}</code>` : "url: n/a",
+          project.publicUrl ? `public url: <code>${htmlEscape(project.publicUrl)}</code>` : "public url: n/a",
         );
       }
     }
