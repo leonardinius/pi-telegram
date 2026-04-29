@@ -38,13 +38,7 @@ export const TELEGRAM_BOT_COMMANDS: readonly TelegramBotCommandDefinition[] = [
     command: "tgreload",
     description: "🔄 Smoke-test pi and reload extensions",
   },
-  {
-    command: "telegram-tgreload-now",
-    description: "🔄 Smoke-test pi and reload extensions (now)",
-  },
-];
-
-export interface TelegramBotCommandRegistrationDeps {
+];export interface TelegramBotCommandRegistrationDeps {
   setMyCommands: (
     commands: readonly TelegramBotCommandDefinition[],
   ) => Promise<unknown>;
@@ -66,7 +60,6 @@ export type TelegramCommandAction =
   | { kind: "ignore"; executionMode: "ignored" }
   | { kind: "stop"; executionMode: "immediate" }
   | { kind: "compact"; executionMode: "immediate" }
-  | { kind: "autoReload"; executionMode: "immediate" }
   | { kind: "status"; executionMode: "control-queue" }
   | { kind: "model"; executionMode: "control-queue" }
   | { kind: "extensions"; executionMode: "immediate" }
@@ -391,7 +384,6 @@ export interface TelegramCommandRuntimeDeps<
   hasQueuedTelegramItems: () => boolean;
   setPreserveQueuedTurnsAsHistory: (preserve: boolean) => void;
   abortCurrentTurn: () => void;
-  handleAutoReload?: (message: TMessage, ctx: TContext) => Promise<void>;
   isIdle: (ctx: TContext) => boolean;
   hasPendingMessages: (ctx: TContext) => boolean;
   hasActiveTelegramTurn: () => boolean;
@@ -450,7 +442,7 @@ export function buildTelegramCommandAction(
       return { kind: "compact", executionMode: "immediate" };
     case "tgreload":
     case "telegram-tgreload-now":
-      return { kind: "autoReload", executionMode: "immediate" };
+      return { kind: "ignore", executionMode: "ignored" };
     case "status":
       return { kind: "status", executionMode: "control-queue" };
     case "model":
@@ -590,10 +582,6 @@ export async function executeTelegramCommandAction<TMessage, TContext>(
     case "compact":
       await deps.handleCompact(message, ctx);
       return true;
-    case "autoReload":
-      if (!deps.handleAutoReload) return false;
-      await deps.handleAutoReload(message, ctx);
-      return true;
     case "status":
       await deps.handleStatus(message, ctx);
       return true;
@@ -663,7 +651,6 @@ export function createTelegramCommandHandlerTargetRuntime<
     hasQueuedTelegramItems: deps.hasQueuedTelegramItems,
     setPreserveQueuedTurnsAsHistory: deps.setPreserveQueuedTurnsAsHistory,
     abortCurrentTurn: deps.abortCurrentTurn,
-    handleAutoReload: deps.handleAutoReload,
     isIdle: deps.isIdle,
     hasPendingMessages: deps.hasPendingMessages,
     hasActiveTelegramTurn: deps.hasActiveTelegramTurn,
@@ -783,7 +770,6 @@ async function handleTelegramCommandRuntime<
           recordRuntimeEvent: deps.recordRuntimeEvent,
         });
       },
-      handleAutoReload: deps.handleAutoReload,
       handleStatus: async (nextMessage, commandCtx) => {
         await handleTelegramStatusCommand<TContext>({
           enqueueControlItem: enqueueControlFor(nextMessage, commandCtx),
