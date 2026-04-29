@@ -79,7 +79,10 @@ export function parseTelegramProjectsCallbackData(data?: string): TelegramProjec
 }
 
 export class TelegramProjectsRuntime {
-  // Pending deletes: chatId → projectName
+  readonly root: string;
+  readonly projectBin: string;
+  readonly publicBaseUrl?: string;
+  private readonly pendingCreateChats = new Set<number>();
   private readonly pendingDeleteChats = new Map<number, string>();
 
   /**
@@ -90,10 +93,10 @@ export class TelegramProjectsRuntime {
   }
 
   /**
-   * Handle user reply for delete confirmation
-   * returns project name when confirmed,
-   * empty string when cancelled or mismatch,
-   * undefined when no pending delete
+   * Handle user reply for delete confirmation.
+   * Returns project name when confirmed,
+   * empty string when cancelled/mismatch,
+   * undefined when no pending delete.
    */
   consumePendingDelete(chatId: number, text: string): string | undefined {
     if (!this.pendingDeleteChats.has(chatId)) return undefined;
@@ -101,17 +104,8 @@ export class TelegramProjectsRuntime {
     this.pendingDeleteChats.delete(chatId);
     const typed = text.trim().toLowerCase();
     if (typed === `delete ${name}`) return name;
-    // any other reply aborts
     return "";
   }
-  // store pending delete requests: chatId -> projectName
-  private readonly pendingDeleteChats = new Map<number, string>();
-
-  readonly root: string;
-  readonly projectBin: string;
-  readonly publicBaseUrl?: string;
-  private readonly pendingCreateChats = new Set<number>();
-  private readonly pendingDeleteChats = new Map<number, string>();
 
   constructor(options: TelegramProjectsRuntimeOptions = {}) {
     this.root = options.root || process.env.WORK_PROJECTS_ROOT || DEFAULT_ROOT;
