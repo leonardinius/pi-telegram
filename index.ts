@@ -207,8 +207,17 @@ export default function (pi: Pi.ExtensionAPI) {
       runSmokeTest: Runtime.runPiPingSmokeTest,
       tailText: Runtime.tailTelegramRuntimeText,
       getCwd: Pi.getExtensionContextCwd,
-      isIdle: Pi.isExtensionContextIdle,
-      sendReloadCommand: piRuntime.sendUserMessage,
+      reloadRuntime: async (reloadCwd) => {
+        try {
+          await Pi.createSettingsManager(reloadCwd).reload();
+        } catch {
+          // ignore; we'll force reload via tmux pane below
+        }
+        const tmuxReload = await Runtime.triggerTmuxTelegramReload();
+        if (!tmuxReload.ok) {
+          throw new Error(`tmux reload failed: ${tmuxReload.error || tmuxReload.stderr || "unknown"}`);
+        }
+      },
       sendTextReply: async (message, text) => {
         await sendTextReply(message.chat.id, message.message_id, text);
       },

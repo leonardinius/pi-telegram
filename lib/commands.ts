@@ -102,11 +102,7 @@ export interface TelegramAutoReloadCommandDeps<TMessage, TContext> {
   runSmokeTest: (cwd: string) => Promise<TelegramAutoReloadSmokeTestResult>;
   tailText: (text: string) => string;
   getCwd: (ctx: TContext) => string;
-  isIdle: (ctx: TContext) => boolean;
-  sendReloadCommand: (
-    command: string,
-    options?: { deliverAs?: "steer" | "followUp" },
-  ) => void;
+  reloadRuntime: (cwd: string) => Promise<void>;
   sendTextReply: (message: TMessage, text: string) => Promise<void>;
 }
 
@@ -134,10 +130,13 @@ export function createTelegramAutoReloadCommandHandler<TMessage, TContext>(
       message,
       "tgreload: smoke test passed; reloading",
     );
-    deps.sendReloadCommand(
-      "/telegram-tgreload-now",
-      deps.isIdle(ctx) ? undefined : { deliverAs: "followUp" },
-    );
+    try {
+      await deps.reloadRuntime(deps.getCwd(ctx));
+      await deps.sendTextReply(message, "tgreload: tmux reload ok");
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      await deps.sendTextReply(message, `tgreload: tmux reload failed\nerror: ${errorMessage}`);
+    }
   };
 }
 
@@ -426,9 +425,12 @@ function getTelegramCommandErrorMessage(error: unknown): string {
 export function parseTelegramCommand(
   text: string,
 ): ParsedTelegramCommand | undefined {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("/")) return undefined;
-  const [head, ...tail] = trimmed.split(/\s+/);
+  const normalized = text
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[‐‑‒–—]/g, "-")
+    .trim();
+  if (!normalized.startsWith("/")) return undefined;
+  const [head, ...tail] = normalized.split(/\s+/);
   const name = head.slice(1).split("@")[0]?.toLowerCase();
   if (!name) return undefined;
   return { name, args: tail.join(" ").trim() };
@@ -706,9 +708,13 @@ export function createTelegramCommandOrPromptRuntime<TMessage, TContext>(
     ): Promise<void> => {
       const firstMessage = messages[0];
       if (!firstMessage) return;
-      const commandName = parseTelegramCommand(
-        deps.extractRawText(messages),
-      )?.name;
+      const rawText = deps.extractRawText(messages);
+      const parsed = parseTelegramCommand(rawText);
+      const commandName =
+        parsed?.name ??
+        (/^\s*\/telegram-tgreload-now(?:@\w+)?(?:\s|$)/i.test(rawText)
+          ? "telegram-tgreload-now"
+          : undefined);
       const handled = await deps.handleCommand(commandName, firstMessage, ctx);
       if (handled) return;
       await deps.enqueueTurn(messages, ctx);

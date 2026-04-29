@@ -9,12 +9,39 @@ import { join } from "node:path";
 
 const TELEGRAM_TYPING_ACTION_INTERVAL_MS = 4000;
 const AUTO_RELOAD_SMOKE_TIMEOUT_MS = 60_000;
+const TELEGRAM_TMUX_RELOAD_TIMEOUT_MS = 10_000;
 
 export interface TelegramPiSmokeTestResult {
   ok: boolean;
   stdout: string;
   stderr: string;
   error?: string;
+}
+
+export interface TelegramTmuxReloadResult {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+  error?: string;
+}
+
+export function triggerTmuxTelegramReload(): Promise<TelegramTmuxReloadResult> {
+  return new Promise((resolve) => {
+    const target = process.env.PI_TELEGRAM_TMUX_TARGET || "work-pi:0.0";
+    const command = process.env.PI_TELEGRAM_TMUX_RELOAD_CMD || "/telegram-tgreload-now";
+    execFile(
+      "tmux",
+      ["send-keys", "-t", target, command, "Enter"],
+      { timeout: TELEGRAM_TMUX_RELOAD_TIMEOUT_MS },
+      (error, stdout, stderr) => {
+        if (error) {
+          resolve({ ok: false, stdout, stderr, error: (error as Error).message });
+          return;
+        }
+        resolve({ ok: true, stdout, stderr });
+      },
+    );
+  });
 }
 
 export function tailTelegramRuntimeText(text: string, max = 1200): string {
