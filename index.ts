@@ -263,59 +263,36 @@ export default function (pi: Pi.ExtensionAPI) {
       projectsRuntime.requestCreate(message.chat.id);
       notice = "Create: reply with <code>NAME node|static [PORT]</code>, e.g. <code>my-app node 18082</code>";
       await answerCallbackQuery(query.id, "Reply with: NAME node|static [PORT]");
-      await sendTextReply(
-        message.chat.id,
-        message.message_id,
-        "Project create: reply with `NAME node|static [PORT]`, e.g. `my-app node 18082`",
-      );
     } else if (action.kind === "toggle-publish") {
       await answerCallbackQuery(query.id, "⏳ Toggling publish...");
       try {
         const result = await projectsRuntime.togglePublish(action.name);
         notice = `<b>${result.ok ? "OK" : "Failed"} / publish ${action.name}</b>\n<code>${Projects.htmlEscape(result.text)}</code>`;
-        await sendTextReply(
-          message.chat.id,
-          message.message_id,
-          `${result.ok ? "OK" : "Failed"}: project publish ${action.name}\n${result.text}`,
-        );
       } catch (error) {
         notice = `<b>Error</b>\n<code>${Projects.htmlEscape(String(error))}</code>`;
-        await sendTextReply(message.chat.id, message.message_id, `Error: ${String(error)}`);
       }
     } else if (action.kind === "delete") {
-      // Begin delete flow: ask for irreversible confirmation
       projectsRuntime.requestDelete(message.chat.id, action.name);
       notice = `☠️❌ IRREVERSIBLE\nDelete app '${action.name}'?\nReply: delete ${action.name} or cancel`;
-      await sendTextReply(
-        message.chat.id,
-        message.message_id,
-        `☠️❌ IRREVERSIBLE\nDelete app '${action.name}'?\nReply: delete ${action.name} or cancel`,
-      );
     } else if (action.kind === "logs") {
       await answerCallbackQuery(query.id, "⏳ Fetching logs...");
       try {
         const result = await projectsRuntime.fetchLogs(action.name);
         notice = `<b>${result.ok ? "OK" : "Failed"} / logs ${action.name}</b>\n<code>${Projects.htmlEscape(result.text)}</code>`;
-        const plainNotice = `${result.ok ? "OK" : "Failed"}: project logs ${action.name}\n${result.text}`;
-        await sendTextReply(message.chat.id, message.message_id, plainNotice);
       } catch (error) {
         notice = `<b>Error fetching logs</b>\n<code>${Projects.htmlEscape(String(error))}</code>`;
-        await sendTextReply(message.chat.id, message.message_id, `Error: ${String(error)}`);
       }
     } else if (action.kind === "up" || action.kind === "down" || action.kind === "health") {
       await answerCallbackQuery(query.id, "⏳ Processing...");
       try {
         const result = await projectsRuntime.run([action.kind, action.name]);
         const projectInfo = (await projectsRuntime.list()).find((p) => p.name === action.name);
-        const publishLine = projectInfo ? `\npublish: ${projectInfo.publishEnabled ? "on" : "off"}` : "";
-        const urlLine = projectInfo?.url ? `\nurl: ${projectInfo.url}` : "";
-        const publicUrlLine = projectInfo?.publicUrl ? `\npublic url: ${projectInfo.publicUrl}` : "";
-        notice = `<b>${result.ok ? "OK" : "Failed"} / ${action.kind} ${action.name}</b>\n<code>${Projects.htmlEscape(result.text)}</code>${Projects.htmlEscape(publishLine)}${Projects.htmlEscape(urlLine)}${Projects.htmlEscape(publicUrlLine)}`;
-        const plainNotice = `${result.ok ? "OK" : "Failed"}: project ${action.kind} ${action.name}\n${result.text}${publishLine}${urlLine}${publicUrlLine}`;
-        await sendTextReply(message.chat.id, message.message_id, plainNotice);
+        const resultText = action.kind === "health" ? "health=checked" : `${action.kind}=${result.ok ? "ok" : "failed"}`;
+        const summaryCode = `${resultText} port=${projectInfo?.port || ""} public=${projectInfo?.publishEnabled ? "ON" : "OFF"}`;
+        const summaryUrl = `url=${projectInfo?.publicUrl || "n/a"}`;
+        notice = `<b>${result.ok ? "OK" : "Failed"} / ${action.kind} ${action.name}</b>\n<code>${Projects.htmlEscape(summaryCode)}</code> ${Projects.htmlEscape(summaryUrl)}`;
       } catch (error) {
         notice = `<b>Error</b>\n<code>${Projects.htmlEscape(String(error))}</code>`;
-        await sendTextReply(message.chat.id, message.message_id, `Error: ${String(error)}`);
       }
     } else {
       await answerCallbackQuery(query.id);

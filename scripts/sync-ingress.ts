@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { join } from "node:path";
 
 const root = process.env.WORK_PROJECTS_ROOT || "/home/agent/work/projects";
-const baseDomain = (process.env.PI_PROJECTS_PUBLIC_BASE_URL || "cloud.it101.org").replace(/^https?:\/\//, "").replace(/\/$/, "");
+const baseDomain = (process.env.PI_PROJECTS_PUBLIC_BASE_URL || "apps.it101.org").replace(/^https?:\/\//, "").replace(/\/$/, "");
 const outPath = process.env.PI_CADDY_DYNAMIC_CONFIG_PATH || "/etc/caddy/Caddyfile.projects";
 const caddyValidateCmd = process.env.PI_CADDY_VALIDATE_CMD || "caddy";
 const caddyReloadCmd = process.env.PI_CADDY_RELOAD_CMD || "systemctl";
@@ -54,7 +54,7 @@ async function main() {
       console.log(`skip ${name}: APP_PORT missing/invalid`);
       continue;
     }
-    routes.push(`${name}.${baseDomain} {\n  reverse_proxy 127.0.0.1:${port}\n}`);
+    routes.push(`${name}-${baseDomain} {\n  reverse_proxy 127.0.0.1:${port}\n}`);
   }
 
   const content = [

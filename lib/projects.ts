@@ -212,11 +212,24 @@ export class TelegramProjectsRuntime {
       } catch {}
       const ps = await shellOut("docker", ["compose", "--env-file", ".env", "-f", "compose.yaml", "ps", "--format", "{{.Service}} {{.Status}}"], path);
       const status = ps.code === 0 && ps.stdout.trim() ? ps.stdout.trim().replace(/\n/g, "; ") : "stopped";
-      const resolvedBase = await this.getResolvedPublicBaseUrl();
-      const base = resolvedBase?.replace(/\/$/, "");
       const url = port ? `http://127.0.0.1:${port}/` : undefined;
       const publishEnabled = await this.isPublishEnabled(name);
-      const publicUrl = publishEnabled && base ? `https://${name}.${base.replace(/^https?:\/\//, "")}/` : undefined;
+
+      let publicUrl: string | undefined;
+      const containerId = await shellOut("docker", ["compose", "--env-file", ".env", "-f", "compose.yaml", "ps", "-q", "app"], path);
+      const id = containerId.stdout.trim();
+      if (id) {
+        const inspect = await shellOut("docker", ["inspect", "-f", "{{ index .Config.Labels \"com.pi.public_url\" }}", id]);
+        const labelUrl = inspect.stdout.trim();
+        if (inspect.code === 0 && labelUrl && labelUrl !== "<no value>") publicUrl = labelUrl;
+      }
+
+      if (!publicUrl) {
+        const resolvedBase = await this.getResolvedPublicBaseUrl();
+        const base = resolvedBase?.replace(/\/$/, "");
+        publicUrl = publishEnabled && base ? `https://${name}-${base.replace(/^https?:\/\//, "")}/` : undefined;
+      }
+
       projects.push({ name, path, port, url, publicUrl, publishEnabled, status });
     }
     return projects;
@@ -265,10 +278,7 @@ export class TelegramProjectsRuntime {
       for (const project of projects) {
         lines.push(
           `\n<b>${htmlEscape(project.name)}</b>`,
-          `status: <code>${htmlEscape(project.status)}</code>`,
-          project.url ? `url: <code>${htmlEscape(project.url)}</code>` : "url: n/a",
-          `publish: <code>${project.publishEnabled ? "on" : "off"}</code>`,
-          project.publicUrl ? `public url: <code>${htmlEscape(project.publicUrl)}</code>` : "public url: n/a",
+          `<code>status=${htmlEscape(project.status)} port=${htmlEscape(project.port || "")} public=${project.publishEnabled ? "ON" : "OFF"}</code> url=${htmlEscape(project.publicUrl || "n/a")}`,
         );
       }
     }
@@ -291,10 +301,8 @@ export class TelegramProjectsRuntime {
         { text: "▶️ Start", callback_data: `proj:up:${project.name}` },
         { text: "⏹ Stop", callback_data: `proj:down:${project.name}` },
         { text: "🗒 Logs", callback_data: `proj:logs:${project.name}` },
-      ]);
-      rows.push([
         {
-          text: project.publishEnabled ? "🌍 Publish: ON" : "🌑 Publish: OFF",
+          text: project.publishEnabled ? "🌍 ON" : "🌑 OFF",
           callback_data: `proj:publish:${project.name}`,
         },
       ]);
