@@ -1,0 +1,324 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="${WORK_PROJECTS_ROOT:-$HOME/work/projects}"
+SYNC_INGRESS_CMD="${PROJECT_SYNC_INGRESS_CMD:-node --experimental-strip-types /home/agent/work/pi-telegram/scripts/sync-ingress.ts}"
+
+usage() {
+  echo "usage: project {new|init|up|down|restart|delete|logs|ps|status|health|env|path|exec} NAME [args...]"
+  echo "new:  project new NAME [static|node] [PORT]"
+  echo "init: project init NAME [static|node|auto] [PORT] [PATH]"
+}
+
+need_name() {
+  [[ $# -ge 1 && "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]] || {
+    echo "bad/missing NAME: use lowercase letters, digits, hyphen" >&2
+    exit 2
+  }
+}
+
+dir_for() { printf "%s/%s" "$ROOT" "$1"; }
+
+need_project() {
+  need_name "$1"
+  local d
+  d="$(dir_for "$1")"
+  [[ -f "$d/compose.yaml" ]] || { echo "project not found: $1" >&2; exit 1; }
+}
+
+compose() {
+  local name="$1"
+  shift
+  local d
+  d="$(dir_for "$name")"
+  [[ -f "$d/.env" ]] && chmod 600 "$d/.env" || true
+  (cd "$d" && docker compose --env-file .env -f compose.yaml "$@")
+}
+
+env_value() {
+  local file="$1" key="$2"
+  awk -F= -v k="$key" '$1==k {v=substr($0,length(k)+2); gsub(/^[" ]+|[" ]+$/, "", v); gsub(/^[\047 ]+|[\047 ]+$/, "", v); print v; exit}' "$file"
+}
+
+ensure_line() {
+  local file="$1" line="$2"
+  touch "$file"
+  grep -qxF "$line" "$file" || echo "$line" >> "$file"
+}
+
+ensure_kv() {
+  local file="$1" key="$2" value="$3"
+  touch "$file"
+  grep -q "^${key}=" "$file" || echo "${key}=${value}" >> "$file"
+}
+
+next_port() {
+  local start="$1" p used_by_env used_by_socket
+  for p in $(seq "$start" 18999); do
+    used_by_env=0
+    if [[ -n "$(find -L "$ROOT" -maxdepth 2 -name .env -type f -exec grep -l "^APP_PORT=$p$" {} + 2>/dev/null | head -n 1)" ]]; then
+      used_by_env=1
+    fi
+    used_by_socket=0
+    if ss -H -ltn 2>/dev/null | awk '{print $4}' | grep -q ":$p$"; then
+      used_by_socket=1
+    fi
+    if [[ "$used_by_env" == 0 && "$used_by_socket" == 0 ]]; then
+      echo "$p"
+      return 0
+    fi
+  done
+  echo "no free port in 18080-18999" >&2
+  exit 1
+}
+
+write_common_files() {
+  local d="$1"
+  mkdir -p "$d/data" "$d/logs"
+  ensure_line "$d/.gitignore" ".env"
+  ensure_line "$d/.gitignore" ".env.*"
+  ensure_line "$d/.gitignore" "!.env.example"
+  ensure_line "$d/.gitignore" "data/"
+  ensure_line "$d/.gitignore" "logs/"
+}
+
+ensure_env_files() {
+  local d="$1" name="$2" template="$3" port="$4"
+  ensure_kv "$d/.env.example" "COMPOSE_PROJECT_NAME" "$name"
+  ensure_kv "$d/.env.example" "APP_PORT" "$port"
+  if [[ "$template" == "node" ]]; then
+    ensure_kv "$d/.env.example" "NODE_ENV" "production"
+  else
+    ensure_kv "$d/.env.example" "APP_IMAGE" "nginx:alpine"
+  fi
+  if [[ ! -f "$d/.env" ]]; then
+    cp "$d/.env.example" "$d/.env"
+  else
+    ensure_kv "$d/.env" "COMPOSE_PROJECT_NAME" "$name"
+    ensure_kv "$d/.env" "APP_PORT" "$port"
+    [[ "$template" == "node" ]] && ensure_kv "$d/.env" "NODE_ENV" "production"
+    [[ "$template" != "node" ]] && ensure_kv "$d/.env" "APP_IMAGE" "nginx:alpine"
+  fi
+  chmod 600 "$d/.env"
+}
+
+write_static_files() {
+  local d="$1" name="$2" port="$3"
+  mkdir -p "$d/public"
+  if [[ ! -f "$d/public/index.html" ]]; then
+    cat > "$d/public/index.html" <<HTML
+<!doctype html><title>$name</title><h1>$name</h1><p>ok</p>
+HTML
+  fi
+  if [[ ! -f "$d/compose.yaml" ]]; then
+    cat > "$d/compose.yaml" <<'YAML'
+name: ${COMPOSE_PROJECT_NAME}
+services:
+  app:
+    image: ${APP_IMAGE}
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${APP_PORT}:80"
+    volumes:
+      - ./public:/usr/share/nginx/html:ro
+      - ./data:/data
+      - ./logs:/logs
+    restart: unless-stopped
+YAML
+  fi
+}
+
+write_node_files() {
+  local d="$1" name="$2" port="$3"
+  if [[ ! -f "$d/package.json" ]]; then
+    cat > "$d/package.json" <<JSON
+{"name":"$name","version":"0.1.0","private":true,"type":"module","scripts":{"start":"node server.js"},"dependencies":{}}
+JSON
+  fi
+  if [[ ! -f "$d/server.js" ]]; then
+    cat > "$d/server.js" <<'JS'
+import http from "node:http";
+
+const port = Number(process.env.PORT || 3000);
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(JSON.stringify({ ok: true, service: process.env.COMPOSE_PROJECT_NAME || "node-app", path: req.url }) + "\n");
+});
+
+server.listen(port, "0.0.0.0", () => console.log(`listening on ${port}`));
+JS
+  fi
+  if [[ ! -f "$d/Dockerfile" ]]; then
+    cat > "$d/Dockerfile" <<'DOCKER'
+FROM node:22-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --omit=dev
+COPY . .
+ENV PORT=3000
+EXPOSE 3000
+CMD ["npm", "start"]
+DOCKER
+  fi
+  if [[ ! -f "$d/.dockerignore" ]]; then
+    cat > "$d/.dockerignore" <<'DOCKERIGNORE'
+.git
+.env
+.env.*
+!.env.example
+node_modules
+data
+logs
+DOCKERIGNORE
+  fi
+  if [[ ! -f "$d/compose.yaml" ]]; then
+    cat > "$d/compose.yaml" <<'YAML'
+name: ${COMPOSE_PROJECT_NAME}
+services:
+  app:
+    build: .
+    env_file:
+      - .env
+    environment:
+      PORT: "3000"
+    ports:
+      - "127.0.0.1:${APP_PORT}:3000"
+    restart: unless-stopped
+YAML
+  fi
+}
+
+init_in_dir() {
+  local name="$1" template="$2" port="$3" d="$4"
+  mkdir -p "$d"
+  write_common_files "$d"
+  ensure_env_files "$d" "$name" "$template" "$port"
+  case "$template" in
+    static) write_static_files "$d" "$name" "$port" ;;
+    node) write_node_files "$d" "$name" "$port" ;;
+    *) echo "unknown template: $template" >&2; exit 2 ;;
+  esac
+}
+
+link_project() {
+  local name="$1" target="$2" link
+  mkdir -p "$ROOT"
+  link="$(dir_for "$name")"
+  target="$(realpath -m "$target")"
+  if [[ -e "$link" || -L "$link" ]]; then
+    [[ "$(realpath -m "$link")" == "$target" ]] || { echo "project path exists: $link" >&2; exit 1; }
+  else
+    ln -s "$target" "$link"
+  fi
+}
+
+sync_ingress() {
+  if [[ "${PROJECT_SYNC_INGRESS_ENABLED:-1}" != "1" ]]; then
+    return 0
+  fi
+  echo "[ingress] syncing..." >&2
+  if ! bash -lc "$SYNC_INGRESS_CMD"; then
+    echo "[ingress] sync failed" >&2
+    return 1
+  fi
+  echo "[ingress] sync ok" >&2
+}
+
+parse_init_args() {
+  template="auto"
+  port=""
+  target=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      auto|static|nginx|node) template="$1" ;;
+      ''|*[!0-9]*) target="$1" ;;
+      *) port="$1" ;;
+    esac
+    shift
+  done
+  [[ "$template" == "nginx" ]] && template="static"
+  return 0
+}
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  new)
+    need_name "${1:-}"
+    name="$1"
+    shift
+    parse_init_args "$@"
+    [[ "$template" == "auto" ]] && template="static"
+    [[ -n "$port" ]] || { [[ "$template" == "node" ]] && port="$(next_port 18081)" || port="$(next_port 18080)"; }
+    d="$(dir_for "$name")"
+    [[ ! -e "$d" && ! -L "$d" ]] || { echo "exists: $d" >&2; exit 1; }
+    init_in_dir "$name" "$template" "$port" "$d"
+    echo "created: $d"
+    echo "next: project up $name"
+    sync_ingress
+    ;;
+  init)
+    need_name "${1:-}"
+    name="$1"
+    shift
+    parse_init_args "$@"
+    target="${target:-$PWD}"
+    target="$(realpath -m "$target")"
+    [[ "$template" == "auto" ]] && { [[ -f "$target/package.json" ]] && template="node" || template="static"; }
+    [[ -n "$port" ]] || { [[ "$template" == "node" ]] && port="$(next_port 18081)" || port="$(next_port 18080)"; }
+    init_in_dir "$name" "$template" "$port" "$target"
+    link_project "$name" "$target"
+    echo "initialized: $target"
+    echo "project link: $(dir_for "$name")"
+    echo "next: project up $name"
+    sync_ingress
+    ;;
+  up) need_project "${1:-}"; compose "$1" up -d --remove-orphans; sync_ingress ;;
+  down) need_project "${1:-}"; compose "$1" down; sync_ingress ;;
+  restart) need_project "${1:-}"; compose "$1" restart; sync_ingress ;;
+  delete)
+    need_project "${1:-}"
+    name="$1"
+    d="$(dir_for "$name")"
+    compose "$name" down || true
+    docker compose -p "$name" down --remove-orphans -v 2>/dev/null || true
+    rm -rf "$d"
+    sync_ingress
+    echo "deleted: $name"
+    ;;
+  logs) need_project "${1:-}"; name="$1"; shift; compose "$name" logs -f --tail=100 "$@" ;;
+  ps) need_project "${1:-}"; compose "$1" ps ;;
+  status)
+    shopt -s nullglob
+    for d in "$ROOT"/*; do
+      [[ -f "$d/compose.yaml" ]] || continue
+      name="$(basename "$d")"
+      printf "%-24s" "$name"
+      (cd "$d" && docker compose --env-file .env -f compose.yaml ps --format "{{.Service}} {{.Status}}" 2>/dev/null | paste -sd ";" -) || echo "error"
+    done
+    ;;
+  health)
+    need_project "${1:-}"
+    d="$(dir_for "$1")"
+    port="$(env_value "$d/.env" APP_PORT)"
+    [[ -n "$port" ]] || { echo "APP_PORT missing in $d/.env" >&2; exit 1; }
+    path="${2:-/}"
+    url="http://127.0.0.1:$port$path"
+    for i in $(seq 1 10); do
+      if out="$(curl -fsS -m 5 -o /dev/null -w "http=%{http_code} time=%{time_total}s url=$url\n" "$url" 2>/dev/null)"; then
+        echo "$out"
+        exit 0
+      fi
+      sleep 1
+    done
+    echo "health failed: $url" >&2
+    exit 1
+    ;;
+  env) need_project "${1:-}"; d="$(dir_for "$1")"; echo "$d/.env"; grep -E "^[A-Z0-9_]+=" "$d/.env" | cut -d= -f1 ;;
+  path) need_project "${1:-}"; dir_for "$1" ;;
+  exec) need_project "${1:-}"; name="$1"; shift; compose "$name" exec "$@" ;;
+  help|-h|--help) usage ;;
+  *) usage; exit 2 ;;
+esac
