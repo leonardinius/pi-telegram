@@ -186,3 +186,5 @@ The pi status bar shows queued Telegram turns as compact previews, for example:
 ## License
 
 MIT
+
+<!-- push-check 2026-04-30T23:39:14Z -->
