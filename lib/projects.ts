@@ -8,6 +8,7 @@ export interface TelegramProjectInfo {
   port?: string;
   url?: string;
   publicUrl?: string;
+  publishEnabled: boolean;
   status: string;
 }
 
@@ -30,6 +31,7 @@ export type TelegramProjectsCallbackAction =
   | { kind: "down"; name: string }
   | { kind: "health"; name: string }
   | { kind: "create-help" }
+  | { kind: "toggle-publish"; name: string }
   | { kind: "delete"; name: string };
 
 const DEFAULT_ROOT = "/home/agent/work/projects";
@@ -80,6 +82,7 @@ export function parseTelegramProjectsCallbackData(data?: string): TelegramProjec
   if (action === "refresh") return { kind: "refresh" };
   if (action === "create") return { kind: "create-help" };
   if (action === "delete") return { kind: "delete", name }; // Handle delete action
+  if (action === "publish") return { kind: "toggle-publish", name };
   if ((action === "up" || action === "down" || action === "health" || action === "logs") && PROJECT_NAME_RE.test(name)) {
     return { kind: action, name };
   }
@@ -93,6 +96,31 @@ export class TelegramProjectsRuntime {
   readonly configPath: string;
   private readonly pendingCreateChats = new Set<number>();
   private readonly pendingDeleteChats = new Map<number, string>();
+
+  private exposeFilePath(projectName: string): string {
+    return join(this.root, projectName, ".expose.yml");
+  }
+
+  private async isPublishEnabled(projectName: string): Promise<boolean> {
+    try {
+      const raw = await fs.readFile(this.exposeFilePath(projectName), "utf8");
+      return /enabled:\s*true\b/i.test(raw);
+    } catch {
+      return false;
+    }
+  }
+
+  async togglePublish(projectName: string): Promise<TelegramProjectsActionResult> {
+    const enabled = await this.isPublishEnabled(projectName);
+    const next = !enabled;
+    const content = `enabled: ${next ? "true" : "false"}\n`;
+    try {
+      await fs.writeFile(this.exposeFilePath(projectName), content, "utf8");
+      return { ok: true, text: `publish: ${next ? "enabled" : "disabled"}` };
+    } catch (error) {
+      return { ok: false, text: `publish toggle failed: ${String(error)}` };
+    }
+  }
 
   /**
    * Start delete flow: ask for user confirmation
@@ -187,8 +215,9 @@ export class TelegramProjectsRuntime {
       const resolvedBase = await this.getResolvedPublicBaseUrl();
       const base = resolvedBase?.replace(/\/$/, "");
       const url = port ? `http://127.0.0.1:${port}/` : undefined;
-      const publicUrl = base ? `https://${name}.${base.replace(/^https?:\/\//, "")}/` : undefined;
-      projects.push({ name, path, port, url, publicUrl, status });
+      const publishEnabled = await this.isPublishEnabled(name);
+      const publicUrl = publishEnabled && base ? `https://${name}.${base.replace(/^https?:\/\//, "")}/` : undefined;
+      projects.push({ name, path, port, url, publicUrl, publishEnabled, status });
     }
     return projects;
   }
@@ -219,21 +248,11 @@ export class TelegramProjectsRuntime {
    * Delete a project folder permanently.
    */
   async deleteProject(name: string): Promise<TelegramProjectsActionResult> {
-    const projectPath = join(this.root, name);
-    // First, stop and remove Docker containers
-    const down = await shellOut(this.projectBin, ["down", name]);
-    // Then, delete the project folder
-    const rm = await shellOut("rm", ["-rf", projectPath]);
-    // Aggregate output
-    const parts: string[] = [];
-    if (down.stdout) parts.push(down.stdout.trim());
-    if (down.stderr) parts.push(down.stderr.trim());
-    if (rm.stdout) parts.push(rm.stdout.trim());
-    if (rm.stderr) parts.push(rm.stderr.trim());
-    const text = parts.join("\n");
+    const result = await shellOut(this.projectBin, ["delete", name]);
+    const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
     return {
-      ok: down.code === 0 && rm.code === 0,
-      text: text || `Deleted ${name}`,
+      ok: result.code === 0,
+      text: output || `Deleted ${name}`,
     };
   }
 
@@ -248,6 +267,7 @@ export class TelegramProjectsRuntime {
           `\n<b>${htmlEscape(project.name)}</b>`,
           `status: <code>${htmlEscape(project.status)}</code>`,
           project.url ? `url: <code>${htmlEscape(project.url)}</code>` : "url: n/a",
+          `publish: <code>${project.publishEnabled ? "on" : "off"}</code>`,
           project.publicUrl ? `public url: <code>${htmlEscape(project.publicUrl)}</code>` : "public url: n/a",
         );
       }
@@ -271,6 +291,12 @@ export class TelegramProjectsRuntime {
         { text: "▶️ Start", callback_data: `proj:up:${project.name}` },
         { text: "⏹ Stop", callback_data: `proj:down:${project.name}` },
         { text: "🗒 Logs", callback_data: `proj:logs:${project.name}` },
+      ]);
+      rows.push([
+        {
+          text: project.publishEnabled ? "🌍 Publish: ON" : "🌑 Publish: OFF",
+          callback_data: `proj:publish:${project.name}`,
+        },
       ]);
       rows.push([
         { text: "❌😵 DELETE APP", callback_data: `proj:delete:${project.name}` },

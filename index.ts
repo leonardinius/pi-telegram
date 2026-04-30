@@ -268,6 +268,20 @@ export default function (pi: Pi.ExtensionAPI) {
         message.message_id,
         "Project create: reply with `NAME node|static [PORT]`, e.g. `my-app node 18082`",
       );
+    } else if (action.kind === "toggle-publish") {
+      await answerCallbackQuery(query.id, "⏳ Toggling publish...");
+      try {
+        const result = await projectsRuntime.togglePublish(action.name);
+        notice = `<b>${result.ok ? "OK" : "Failed"} / publish ${action.name}</b>\n<code>${Projects.htmlEscape(result.text)}</code>`;
+        await sendTextReply(
+          message.chat.id,
+          message.message_id,
+          `${result.ok ? "OK" : "Failed"}: project publish ${action.name}\n${result.text}`,
+        );
+      } catch (error) {
+        notice = `<b>Error</b>\n<code>${Projects.htmlEscape(String(error))}</code>`;
+        await sendTextReply(message.chat.id, message.message_id, `Error: ${String(error)}`);
+      }
     } else if (action.kind === "delete") {
       // Begin delete flow: ask for irreversible confirmation
       projectsRuntime.requestDelete(message.chat.id, action.name);
@@ -293,10 +307,11 @@ export default function (pi: Pi.ExtensionAPI) {
       try {
         const result = await projectsRuntime.run([action.kind, action.name]);
         const projectInfo = (await projectsRuntime.list()).find((p) => p.name === action.name);
+        const publishLine = projectInfo ? `\npublish: ${projectInfo.publishEnabled ? "on" : "off"}` : "";
         const urlLine = projectInfo?.url ? `\nurl: ${projectInfo.url}` : "";
         const publicUrlLine = projectInfo?.publicUrl ? `\npublic url: ${projectInfo.publicUrl}` : "";
-        notice = `<b>${result.ok ? "OK" : "Failed"} / ${action.kind} ${action.name}</b>\n<code>${Projects.htmlEscape(result.text)}</code>${Projects.htmlEscape(urlLine)}${Projects.htmlEscape(publicUrlLine)}`;
-        const plainNotice = `${result.ok ? "OK" : "Failed"}: project ${action.kind} ${action.name}\n${result.text}${urlLine}${publicUrlLine}`;
+        notice = `<b>${result.ok ? "OK" : "Failed"} / ${action.kind} ${action.name}</b>\n<code>${Projects.htmlEscape(result.text)}</code>${Projects.htmlEscape(publishLine)}${Projects.htmlEscape(urlLine)}${Projects.htmlEscape(publicUrlLine)}`;
+        const plainNotice = `${result.ok ? "OK" : "Failed"}: project ${action.kind} ${action.name}\n${result.text}${publishLine}${urlLine}${publicUrlLine}`;
         await sendTextReply(message.chat.id, message.message_id, plainNotice);
       } catch (error) {
         notice = `<b>Error</b>\n<code>${Projects.htmlEscape(String(error))}</code>`;
