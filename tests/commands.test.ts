@@ -41,6 +41,7 @@ test("Command helpers expose Telegram bot command definitions", () => {
       description: "📊 Show model, usage, cost, and context",
     },
     { command: "model", description: "🧠 Open model selector" },
+    { command: "freemodel", description: "🆓 Free models" },
     { command: "compact", description: "🧹 Compact current pi session" },
     { command: "stop", description: "🛑 Abort current pi task" },
     { command: "extensions", description: "🧩 List available pi commands" },

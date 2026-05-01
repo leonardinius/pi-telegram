@@ -30,6 +30,7 @@ export const TELEGRAM_BOT_COMMANDS: readonly TelegramBotCommandDefinition[] = [
     description: "📊 Show model, usage, cost, and context",
   },
   { command: "model", description: "🧠 Open model selector" },
+  { command: "freemodel", description: "🆓 Free models" },
   { command: "compact", description: "🧹 Compact current pi session" },
   { command: "stop", description: "🛑 Abort current pi task" },
   { command: "extensions", description: "🧩 List available pi commands" },
@@ -64,6 +65,7 @@ export type TelegramCommandAction =
   | { kind: "autoReload"; executionMode: "immediate" }
   | { kind: "status"; executionMode: "control-queue" }
   | { kind: "model"; executionMode: "control-queue" }
+  | { kind: "freemodel"; executionMode: "control-queue" }
   | { kind: "extensions"; executionMode: "immediate" }
   | { kind: "projects"; executionMode: "immediate" }
   | { kind: "quit"; executionMode: "immediate" }
@@ -84,6 +86,7 @@ export interface TelegramCommandActionDeps<TMessage, TContext> {
   handleAutoReload?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleStatus: (message: TMessage, ctx: TContext) => Promise<void>;
   handleModel: (message: TMessage, ctx: TContext) => Promise<void>;
+  handleFreeModel: (message: TMessage, ctx: TContext) => Promise<void>;
   handleExtensions?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleProjects?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleQuit?: (message: TMessage, ctx: TContext) => Promise<void>;
@@ -459,6 +462,8 @@ export function buildTelegramCommandAction(
       return { kind: "status", executionMode: "control-queue" };
     case "model":
       return { kind: "model", executionMode: "control-queue" };
+    case "freemodel":
+      return { kind: "freemodel", executionMode: "control-queue" };
     case "extensions":
       return { kind: "extensions", executionMode: "immediate" };
     case "projects":
@@ -652,6 +657,9 @@ export async function executeTelegramCommandAction<TMessage, TContext>(
       return true;
     case "model":
       await deps.handleModel(message, ctx);
+      return true;
+    case "freemodel":
+      await deps.handleFreeModel(message, ctx);
       return true;
     case "extensions":
       if (!deps.handleExtensions) return false;
