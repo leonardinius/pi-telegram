@@ -137,22 +137,6 @@ export default function (pi: Pi.ExtensionAPI) {
       },
     );
 
-  let lastConnectedPingAt = 0;
-  const maybeSendConnectedPing = async (): Promise<void> => {
-    const allowedUserId = configStore.getAllowedUserId();
-    if (!allowedUserId) return;
-    const now = Date.now();
-    if (now - lastConnectedPingAt < 60_000) return;
-    lastConnectedPingAt = now;
-    try {
-      await sendMessage({
-        chat_id: allowedUserId,
-        text: Updates.getRandomTelegramConnectedPhrase(),
-      });
-    } catch {
-      // ignore ping failures
-    }
-  };
 
   const dispatchNextQueuedTelegramTurn =
     Queue.createTelegramQueueDispatchRuntime<Pi.ExtensionContext>({
@@ -601,7 +585,6 @@ export default function (pi: Pi.ExtensionAPI) {
     stopTypingLoop: bridgeRuntime.typing.stop,
     updateStatus,
     recordRuntimeEvent: runtimeEvents.record,
-    onStarted: () => maybeSendConnectedPing(),
   });
 
   // --- Extension Registration ---

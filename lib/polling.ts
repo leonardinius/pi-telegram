@@ -98,7 +98,6 @@ export interface TelegramPollingRuntimeDeps<TContext> {
   stopTypingLoop: () => unknown;
   runPollLoop: (ctx: TContext, signal: AbortSignal) => Promise<void>;
   updateStatus: (ctx: TContext) => void;
-  onStarted?: (ctx: TContext) => void | Promise<void>;
   createAbortController?: () => AbortController;
 }
 
@@ -123,7 +122,6 @@ export interface TelegramPollingControllerRuntimeDeps<
   state?: TelegramPollingControllerState;
   hasBotToken: () => boolean;
   stopTypingLoop: () => unknown;
-  onStarted?: (ctx: TContext) => void | Promise<void>;
   createAbortController?: () => AbortController;
 }
 
@@ -149,7 +147,6 @@ export function createTelegramPollingControllerRuntime<
       recordRuntimeEvent: deps.recordRuntimeEvent,
     }),
     updateStatus: deps.updateStatus,
-    onStarted: deps.onStarted,
     createAbortController: deps.createAbortController,
   });
 }
@@ -213,7 +210,6 @@ export function startTelegramPollingRuntime<TContext>(
   });
   deps.setPollingPromise(promise);
   deps.updateStatus(ctx);
-  void deps.onStarted?.(ctx);
 }
 
 export interface TelegramRuntimeEventRecorderPort {

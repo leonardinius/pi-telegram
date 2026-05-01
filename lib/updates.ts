@@ -10,20 +10,6 @@ import {
   type TelegramUserPairingRuntimeDeps,
 } from "./config.ts";
 
-const TELEGRAM_CONNECTED_PHRASES = [
-  "Я проснулся. Кофе в стеке, стэк в норме.",
-  "Оживился и уже делаю умное лицо.",
-  "Восстал из процессов. Готов пахать.",
-  "Система в строю. Шутки — в проде.",
-  "Поднялся. Не баг, а характер.",
-] as const;
-
-export function getRandomTelegramConnectedPhrase(): string {
-  return TELEGRAM_CONNECTED_PHRASES[
-    Math.floor(Math.random() * TELEGRAM_CONNECTED_PHRASES.length)
-  ];
-}
-
 // --- Extraction ---
 
 export interface TelegramReactionTypeEmoji {
@@ -675,7 +661,7 @@ export async function executeTelegramUpdatePlan<
     await deps.sendTextReply(
       replyTarget.chatId,
       replyTarget.messageId,
-      getRandomTelegramConnectedPhrase(),
+      "Telegram bridge paired with this account.",
     );
   }
   if (plan.shouldDeny) {
