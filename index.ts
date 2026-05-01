@@ -7,6 +7,7 @@ import * as Api from "./lib/api.ts";
 import * as Attachments from "./lib/attachments.ts";
 import * as Commands from "./lib/commands.ts";
 import * as Config from "./lib/config.ts";
+import * as FreeModel from "./lib/freemodel.ts";
 import * as Media from "./lib/media.ts";
 import * as Menu from "./lib/menu.ts";
 import * as Model from "./lib/model.ts";
@@ -494,6 +495,29 @@ export default function (pi: Pi.ExtensionAPI) {
                     message.chat.id,
                     message.message_id,
                     `Failed to list commands: ${err}`,
+                  );
+                }
+              },
+              handleFreeModel: async (message, _ctx) => {
+                try {
+                  const data = await FreeModel.getModels();
+                  await sendTextReply(
+                    message.chat.id,
+                    message.message_id,
+                    FreeModel.generateSummary(data),
+                  );
+                  await Menu.openTelegramFreeModelMenu(
+                    message.chat.id,
+                    message.message_id,
+                    data.models,
+                    { sendInteractiveMessage },
+                  );
+                } catch (error) {
+                  const err = error instanceof Error ? error.message : String(error);
+                  await sendTextReply(
+                    message.chat.id,
+                    message.message_id,
+                    `⚠️ Failed to load free models. Try again later.`,
                   );
                 }
               },
