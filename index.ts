@@ -353,6 +353,7 @@ export default function (pi: Pi.ExtensionAPI) {
 
   const handleFreeModelCallback = async (
     query: Api.TelegramCallbackQuery,
+    ctx: Pi.ExtensionContext,
   ): Promise<boolean> => {
     if (!query.data?.startsWith("freemodel:pick:")) return false;
     const id = query.data.slice("freemodel:pick:".length);
@@ -364,10 +365,19 @@ export default function (pi: Pi.ExtensionAPI) {
         return true;
       }
       await answerCallbackQuery(query.id, `Switching to ${model.name}...`);
-      modelSwitchController.stagePendingSwitch(
-        { id: model.id, name: model.name } as ActivePiModel,
-        undefined as unknown as Pi.ExtensionContext,
-      );
+      const isIdle = Pi.isExtensionContextIdle(ctx);
+      if (isIdle) {
+        // @ts-ignore: free model selection doesn't need full Model<any> shape
+        await piRuntime.setModel({ id: model.id, name: model.name } as any);
+        currentModelRuntime.setCurrentModel({ id: model.id, name: model.name } as any, ctx);
+      } else {
+        // @ts-ignore: free model selection doesn't need full Model<any> shape
+        modelSwitchController.stagePendingSwitch(
+          { model: { id: model.id, name: model.name } } as any,
+          ctx,
+        );
+      }
+      updateStatus(ctx);
     } catch (error) {
       const err = error instanceof Error ? error.message : String(error);
       await answerCallbackQuery(query.id, `Error: ${err}`);
@@ -405,7 +415,7 @@ export default function (pi: Pi.ExtensionAPI) {
       answerCallbackQuery,
       handleAuthorizedTelegramCallbackQuery: async (query, ctx) => {
         if (await handleProjectsCallback(query)) return;
-        if (await handleFreeModelCallback(query)) return;
+        if (await handleFreeModelCallback(query, ctx)) return;
         await Menu.createTelegramMenuCallbackHandlerForContext<
           Api.TelegramCallbackQuery,
           Pi.ExtensionContext,
