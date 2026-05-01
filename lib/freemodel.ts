@@ -66,38 +66,54 @@ async function fetchAndCacheModels(): Promise<FreeModelData> {
   return modelData;
 }
 
-export async function getModels(): Promise<FreeModelData> {
+export interface FreeModelGetResult {
+  data: FreeModelData;
+  isStale: boolean;
+}
+
+export async function getModels(): Promise<FreeModelGetResult> {
   const cached = await readCache();
+  let isStale = false;
   if (cached) {
     try {
       const stats = await stat(CACHE_PATH);
       const age = Date.now() - stats.mtimeMs;
       if (age < TTL_MS) {
-        return cached;
+        return { data: cached, isStale: false };
       }
+      isStale = true;
     } catch {
-      // ignore stat error, treat as stale
+      isStale = true;
     }
   }
   try {
-    return await fetchAndCacheModels();
+    const fresh = await fetchAndCacheModels();
+    return { data: fresh, isStale: false };
   } catch (error) {
     if (cached) {
-      return cached; // fallback to stale cache
+      return { data: cached, isStale: true };
     }
     throw error;
   }
 }
 
-export function generateSummary(data: FreeModelData): string {
+export function generateSummary(data: FreeModelData, isStale = false): string {
   const lines: string[] = [
     "🆓 <b>Free Models</b>",
     "",
-    `Total: ${data.count} models`,
-    `Updated: ${data.updatedAt}`,
-    "",
-    "<b>Top 5 models:</b>",
   ];
+  if (isStale) {
+    lines.push("⚠️ <i>Using cached data (fetch failed or data >1h old)</i>");
+    lines.push("");
+  }
+  if (!data.models || data.models.length === 0) {
+    lines.push("No free models available.");
+    return lines.join("\n");
+  }
+  lines.push(`Total: ${data.count} models`);
+  lines.push(`Updated: ${data.updatedAt}`);
+  lines.push("");
+  lines.push("<b>Top 5 models:</b>");
   const topFive = data.models.slice(0, 5);
   for (const model of topFive) {
     lines.push(

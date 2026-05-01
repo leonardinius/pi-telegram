@@ -420,6 +420,7 @@ export interface TelegramCommandRuntimeDeps<
   handleExtensions?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleProjects?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleQuit?: (message: TMessage, ctx: TContext) => Promise<void>;
+  handleFreeModel?: (message: TMessage, ctx: TContext) => Promise<void>;
 }
 
 export function buildTelegramHelpText(

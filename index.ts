@@ -357,27 +357,17 @@ export default function (pi: Pi.ExtensionAPI) {
     if (!query.data?.startsWith("freemodel:pick:")) return false;
     const id = query.data.slice("freemodel:pick:".length);
     try {
-      const data = await FreeModel.getModels();
+      const { data } = await FreeModel.getModels();
       const model = data.models.find((m) => m.id === id);
       if (!model) {
         await answerCallbackQuery(query.id, "Model not found.");
         return true;
       }
-      const isIdle = Pi.isExtensionContextIdle();
-      if (isIdle) {
-        const switched = await piRuntime.setModel(id);
-        if (switched) {
-          await answerCallbackQuery(query.id, `Switched to ${model.name}`);
-        } else {
-          await answerCallbackQuery(query.id, "Failed to switch model.");
-        }
-      } else {
-        await answerCallbackQuery(query.id, `Switching to ${model.name}...`);
-        modelSwitchController.stagePendingSwitch({
-          model: { id, name: model.name } as ActivePiModel,
-          ctx: undefined as unknown as Pi.ExtensionContext,
-        });
-      }
+      await answerCallbackQuery(query.id, `Switching to ${model.name}...`);
+      modelSwitchController.stagePendingSwitch(
+        { id: model.id, name: model.name } as ActivePiModel,
+        undefined as unknown as Pi.ExtensionContext,
+      );
     } catch (error) {
       const err = error instanceof Error ? error.message : String(error);
       await answerCallbackQuery(query.id, `Error: ${err}`);
@@ -533,19 +523,19 @@ export default function (pi: Pi.ExtensionAPI) {
                   );
                 }
               },
-              handleFreeModel: async (message, _ctx) => {
+              handleFreeModel: async (message: Api.TelegramMessage, _ctx: Pi.ExtensionContext) => {
                 try {
-                  const data = await FreeModel.getModels();
+                  const { data, isStale } = await FreeModel.getModels();
                   await sendTextReply(
                     message.chat.id,
                     message.message_id,
-                    FreeModel.generateSummary(data),
+                    FreeModel.generateSummary(data, isStale),
                   );
                   await Menu.openTelegramFreeModelMenu(
                     message.chat.id,
                     message.message_id,
                     data.models,
-                    { sendInteractiveMessage },
+                    { sendInteractiveMessage, editInteractiveMessage },
                   );
                 } catch (error) {
                   const err = error instanceof Error ? error.message : String(error);
