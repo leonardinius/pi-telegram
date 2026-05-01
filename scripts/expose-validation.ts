@@ -6,13 +6,16 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-export type ExposeValidationReason =
-  | "EXPOSE_DISABLED"
-  | "APP_PORT_MISSING"
-  | "APP_PORT_INVALID"
-  | "COMPOSE_INVALID"
-  | "PORT_MISMATCH"
-  | "INVALID_PROJECT_SLUG";
+export const EXPOSE_VALIDATION_REASONS = [
+  "EXPOSE_DISABLED",
+  "APP_PORT_MISSING",
+  "APP_PORT_INVALID",
+  "COMPOSE_INVALID",
+  "PORT_MISMATCH",
+  "INVALID_PROJECT_SLUG",
+] as const;
+
+export type ExposeValidationReason = typeof EXPOSE_VALIDATION_REASONS[number];
 
 export type ExposeValidationResult =
   | { name: string; ok: true; port: number }

@@ -1,21 +1,47 @@
 #!/usr/bin/env node
 /**
  * Dynamic Caddy ingress sync for project publishing
- * Reuses the shared fail-closed expose validator before generating any route
+ * Renders routes only from the shared validation matrix and reports reason-code summaries
  */
 
 import { promises as fs } from "node:fs";
 import { execFile } from "node:child_process";
+import { pathToFileURL } from "node:url";
 
-import { readProjectEnv, validateProjectsExpose, type ExposeValidationResult } from "./expose-validation.ts";
+import {
+  EXPOSE_VALIDATION_REASONS,
+  readProjectEnv,
+  validateProjectsExpose,
+  type ExposeValidationReason,
+  type ExposeValidationResult,
+} from "./expose-validation.ts";
 
 const root = process.env.WORK_PROJECTS_ROOT || "/home/agent/work/projects";
-const baseDomain = (process.env.PI_PROJECTS_PUBLIC_BASE_URL || "apps.it101.org").replace(/^https?:\/\//, "").replace(/\/$/, "");
+const baseDomain = normalizeBaseDomain(process.env.PI_PROJECTS_PUBLIC_BASE_URL || "apps.it101.org");
 const outPath = process.env.PI_CADDY_DYNAMIC_CONFIG_PATH || "/etc/caddy/Caddyfile.projects";
 const caddyValidateCmd = process.env.PI_CADDY_VALIDATE_CMD || "caddy";
 const caddyReloadCmd = process.env.PI_CADDY_RELOAD_CMD || "systemctl";
 
-function run(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+type CommandResult = { code: number; stdout: string; stderr: string };
+type PasswordHasher = (plain: string) => Promise<string>;
+
+type IngressAuth = { user: string; pass?: string };
+
+type ValidExposeResult = Extract<ExposeValidationResult, { ok: true }>;
+
+export type IngressReasonSummary = {
+  total: number;
+  valid: number;
+  skipped: number;
+  reasons: Record<ExposeValidationReason, number>;
+};
+
+export type IngressConfigRenderResult = {
+  content: string;
+  routeCount: number;
+};
+
+function run(command: string, args: string[]): Promise<CommandResult> {
   return new Promise((resolve) => {
     execFile(command, args, { timeout: 60_000 }, (error, stdout, stderr) => {
       const code = typeof (error as NodeJS.ErrnoException | null)?.code === "number" ? Number((error as NodeJS.ErrnoException).code) : error ? 1 : 0;
@@ -24,7 +50,7 @@ function run(command: string, args: string[]): Promise<{ code: number; stdout: s
   });
 }
 
-async function hashPassword(plain: string): Promise<string> {
+async function defaultHashPassword(plain: string): Promise<string> {
   const out = await run("caddy", ["hash-password", "--plaintext", plain]);
   if (out.code !== 0 || !out.stdout.trim()) {
     throw new Error(`failed to hash password: ${out.stderr || out.stdout}`);
@@ -32,43 +58,98 @@ async function hashPassword(plain: string): Promise<string> {
   return out.stdout.trim();
 }
 
-function logSkip(result: ExposeValidationResult): void {
-  if (result.ok) return;
-  console.log(JSON.stringify({ event: "ingress_skip", project: result.name, ok: false, reason: result.reason, detail: result.detail || "" }));
+export function normalizeBaseDomain(value: string): string {
+  return value.replace(/^https?:\/\//, "").replace(/\/$/, "");
 }
 
-async function appAuth(name: string): Promise<{ user: string; pass?: string; publicUrl?: string }> {
-  const env = await readProjectEnv(root, name);
+function projectHost(name: string, publishBaseDomain: string): string {
+  return `${name}-${normalizeBaseDomain(publishBaseDomain)}`;
+}
+
+function validProjects(matrix: ExposeValidationResult[]): ValidExposeResult[] {
+  return matrix.filter((result): result is ValidExposeResult => result.ok);
+}
+
+export function summarizeValidationMatrix(matrix: ExposeValidationResult[]): IngressReasonSummary {
+  const reasons = Object.fromEntries(EXPOSE_VALIDATION_REASONS.map((reason) => [reason, 0])) as Record<ExposeValidationReason, number>;
+  let valid = 0;
+  for (const result of matrix) {
+    if (result.ok) valid += 1;
+    else reasons[result.reason] += 1;
+  }
   return {
-    user: env.APP_BASIC_AUTH_USER || "pidev0",
-    pass: env.APP_BASIC_AUTH_PASS,
-    publicUrl: env.APP_PUBLIC_URL,
+    total: matrix.length,
+    valid,
+    skipped: matrix.length - valid,
+    reasons,
   };
 }
 
-async function main() {
-  const results = await validateProjectsExpose(root);
-  const routes: string[] = [];
-  for (const result of results) {
-    if (!result.ok) {
-      logSkip(result);
-      continue;
+export function formatValidationMatrixLines(matrix: ExposeValidationResult[]): string[] {
+  const lines = matrix.map((result) => {
+    if (result.ok) {
+      return JSON.stringify({ event: "ingress_validation", project: result.name, ok: true, port: result.port });
     }
-    const app = await appAuth(result.name);
-    const host = (app.publicUrl || `https://${result.name}-${baseDomain}/`).replace(/^https?:\/\//, "").replace(/\/$/, "");
+    return JSON.stringify({
+      event: "ingress_validation",
+      project: result.name,
+      ok: false,
+      reason: result.reason,
+      detail: result.detail || "",
+    });
+  });
+  lines.push(JSON.stringify({ event: "ingress_validation_summary", ...summarizeValidationMatrix(matrix) }));
+  return lines;
+}
+
+async function appAuth(projectRoot: string, name: string): Promise<IngressAuth> {
+  const env = await readProjectEnv(projectRoot, name);
+  return {
+    user: env.APP_BASIC_AUTH_USER || "pidev0",
+    pass: env.APP_BASIC_AUTH_PASS,
+  };
+}
+
+export async function buildIngressConfig(options: {
+  root: string;
+  baseDomain: string;
+  matrix: ExposeValidationResult[];
+  hashPassword?: PasswordHasher;
+}): Promise<IngressConfigRenderResult> {
+  const hashPassword = options.hashPassword || defaultHashPassword;
+  const routes: string[] = [];
+
+  for (const result of validProjects(options.matrix)) {
+    const app = await appAuth(options.root, result.name);
+    const host = projectHost(result.name, options.baseDomain);
     const auth = app.pass ? `\n  basicauth {\n    ${app.user || "pidev0"} ${await hashPassword(app.pass)}\n  }` : "";
     routes.push(`http://${host} {${auth}\n  reverse_proxy 127.0.0.1:${result.port}\n}`);
   }
 
-  const content = [
-    "# generated by scripts/sync-ingress.ts",
-    ...routes,
-    "",
-  ].join("\n");
+  return {
+    content: [
+      "# generated by scripts/sync-ingress.ts",
+      ...routes,
+      "",
+    ].join("\n"),
+    routeCount: routes.length,
+  };
+}
 
+async function runReload(command: string): Promise<CommandResult> {
+  return command === "systemctl"
+    ? run("systemctl", ["reload", "caddy"])
+    : run(command, []);
+}
+
+export async function syncIngress(): Promise<number> {
+  const matrix = await validateProjectsExpose(root);
+  for (const line of formatValidationMatrixLines(matrix)) console.log(line);
+
+  const rendered = await buildIngressConfig({ root, baseDomain, matrix });
   const tmp = `${outPath}.tmp`;
   const bak = `${outPath}.bak`;
-  await fs.writeFile(tmp, content, "utf8");
+  await fs.writeFile(tmp, rendered.content, "utf8");
 
   const validate = await run(caddyValidateCmd, ["validate", "--config", tmp]);
   if (validate.code !== 0) {
@@ -81,24 +162,31 @@ async function main() {
   } catch {}
   await fs.rename(tmp, outPath);
 
-  const reload = caddyReloadCmd === "systemctl"
-    ? await run("systemctl", ["reload", "caddy"])
-    : await run(caddyReloadCmd, []);
-
+  const reload = await runReload(caddyReloadCmd);
   if (reload.code !== 0) {
     console.error(`caddy reload failed:\n${reload.stderr || reload.stdout}`);
     if (await fs.stat(bak).then(() => true).catch(() => false)) {
       await fs.copyFile(bak, outPath);
-      await run("systemctl", ["reload", "caddy"]);
+      await runReload(caddyReloadCmd);
       console.error("rolled back to last-known-good");
     }
     process.exit(3);
   }
 
-  console.log(`ok: ${routes.length} published routes`);
+  return rendered.routeCount;
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+function isMain(): boolean {
+  return process.argv[1] ? import.meta.url === pathToFileURL(process.argv[1]).href : false;
+}
+
+if (isMain()) {
+  syncIngress()
+    .then((routeCount) => {
+      console.log(`ok: ${routeCount} published routes`);
+    })
+    .catch((error: unknown) => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    });
+}
