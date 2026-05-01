@@ -1,0 +1,69 @@
+
+[Unit]
+Description=Pi Telegram Bridge (instance %i)
+Documentation=https://github.com/leonardinius/pi-telegram
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# User context
+User=agent
+Group=agent
+
+# Working directory
+WorkingDirectory=/home/agent/.pi/agent
+
+# Environment files (drop-ins for secrets / env override)
+EnvironmentFile=-/etc/default/pi-telegram
+EnvironmentFile=-/home/agent/.config/pi-telegram.env
+
+# PATH with pi installed location first
+Environment=PATH=/home/agent/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Runtime tunables (used by pi-telegram-start.sh)
+Environment=PI_TELEGRAM_TMUX_SESSION=work-pi
+Environment=PI_TELEGRAM_TMUX_TARGET=work-pi:0.0
+Environment=PI_TELEGRAM_WORKDIR=/home/agent/.pi/agent
+Environment=PI_TELEGRAM_PI_BIN=/home/agent/.npm-global/bin/pi
+Environment=PI_TELEGRAM_CONNECT_COMMAND=/telegram-connect
+Environment=PI_TELEGRAM_RUN_DIR=/run/pi-telegram
+Environment=PI_TELEGRAM_START_TIMEOUT=60
+Environment=PI_TELEGRAM_CONNECT_TIMEOUT=45
+
+# Exec
+ExecStart=/usr/local/bin/pi-telegram-start.sh start
+ExecReload=/usr/local/bin/pi-telegram-start.sh start
+ExecStop=/usr/local/bin/pi-telegram-start.sh stop
+
+# Restart / backoff policy
+Restart=on-failure
+RestartSec=5s
+RestartSteps=6
+RestartMaxDelaySec=5min
+StartLimitIntervalSec=30min
+StartLimitBurst=10
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/agent/.pi /home/agent/.config /home/agent/.cache /tmp /run/pi-telegram
+PrivateTmp=no
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=yes
+RestrictNamespaces=yes
+
+# Resource controls (lenient)
+MemoryDenyWriteExecute=no
+
+[Install]
+WantedBy=multi-user.target

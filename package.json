@@ -30,6 +30,7 @@
   "files": [
     "index.ts",
     "lib/",
+    "deploy/",
     "README.md",
     "docs/",
     "screenshot.png"
