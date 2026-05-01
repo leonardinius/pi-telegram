@@ -4,6 +4,15 @@
 
 Spec for integrating project publish flow with `pi-telegram` project management and existing `project` scripts.
 
+## Ingress security contract
+
+- Public hostname is generated only as `https://<project>-<base>/`.
+- `<project>` is the validated project slug; invalid slugs are not publishable.
+- `<base>` is the configured managed publish base; it is not project-provided input.
+- Managed DNS/routes may be created, updated, or removed only for names matching `<project>-<base>`.
+- `APP_PUBLIC_URL` must not override, customize, or influence the public hostname.
+- `APP_PUBLIC_URL`, if present, is application metadata only and is outside ingress route derivation.
+
 ## Canonical slug proposal
 
 - Auto slug: `projpub-v1-cf-caddy-localbind`
@@ -16,15 +25,17 @@ Spec for integrating project publish flow with `pi-telegram` project management 
 4. Any missing/invalid/mismatch state is **fail closed**: do not publish, log explicit error.
 5. Single shared Caddy instance, dynamic config generation.
 6. Caddy upstreams only to `http://127.0.0.1:<APP_PORT>`.
-7. Origin bypass protection is mandatory:
+7. Public route hostnames are derived only from `https://<project>-<base>/`; custom host overrides are forbidden.
+8. Managed DNS scope is limited to `<project>-<base>` entries owned by this publish flow.
+9. Origin bypass protection is mandatory:
    - Caddy listens only on `127.0.0.1` and `::1`.
    - Host firewall hardening is mandatory step.
-8. Cloudflare Access policy:
+10. Cloudflare Access policy:
    - allow only owner email,
    - MFA always,
    - no break-glass account.
-9. Hook integration into `project` commands: `new/init/up/down/restart/delete` -> unified `sync-ingress` call after successful operation.
-10. Canary: first app `aaa`, observation window 24h, stop criteria: repeated 5xx, unavailability, latency regression.
+11. Hook integration into `project` commands: `new/init/up/down/restart/delete` -> unified `sync-ingress` call after successful operation.
+12. Canary: first app `aaa`, observation window 24h, stop criteria: repeated 5xx, unavailability, latency regression.
 
 ## Target artifacts
 
@@ -57,7 +68,8 @@ Spec for integrating project publish flow with `pi-telegram` project management 
    - atomically write config (`tmp` + rename),
    - run `caddy validate` then `systemctl reload caddy` only on valid config.
 2. Routing model:
-   - host `https://<project>.<publicBaseDomain>` -> reverse proxy `127.0.0.1:<APP_PORT>`.
+   - host `https://<project>-<base>/` -> reverse proxy `127.0.0.1:<APP_PORT>`.
+   - ignore `APP_PUBLIC_URL` for public host selection.
 
 ### Phase 3 — Caddy and systemd
 
@@ -119,8 +131,18 @@ Rules:
 
 - Disabled/malformed project configs never produce public routes.
 - Port mismatch always blocks publish.
+- Public hostnames always match `https://<project>-<base>/`; `APP_PUBLIC_URL` cannot override them.
+- Managed DNS/route cleanup is limited to entries matching `<project>-<base>`.
 - `sync-ingress` is idempotent and safe to run repeatedly.
 - Caddy reload happens only after successful validation.
 - Direct origin bypass is blocked (bind + firewall).
 - Project lifecycle commands consistently trigger ingress sync.
 - Canary decision documented after 24h window.
+
+## Non-goals
+
+- No custom-domain routing.
+- No per-project public host override, including via `APP_PUBLIC_URL`.
+- No DNS changes outside managed `<project>-<base>` entries.
+- No application port discovery outside the `.env` `APP_PORT` contract.
+- No implementation of firewall/DNS cleanup in this Step 1 doc-only scope.
