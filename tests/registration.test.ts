@@ -231,11 +231,9 @@ test("Registration connect command can move singleton ownership after confirmati
       events.push("reload");
     },
     hasBotToken: () => true,
-    startPolling: async (_ctx, options) => {
-      events.push(options?.force ? "start-force" : "start");
-      return options?.force
-        ? { ok: true, message: "connected" }
-        : { ok: false, canTakeover: true, message: "active elsewhere" };
+    startPolling: async (_ctx) => {
+      events.push("start");
+      return;
     },
     stopPolling: async () => undefined,
     updateStatus: () => {
@@ -257,8 +255,8 @@ test("Registration connect command can move singleton ownership after confirmati
     "telegram-connect",
   );
   await connectCommand.handler("", ctx);
-  assert.deepEqual(events, ["reload", "start", "confirm", "start-force", "update-status"]);
-  assert.deepEqual(notifications, ["connected"]);
+  assert.deepEqual(events, ["reload", "start", "update-status"]);
+  assert.deepEqual(notifications, []);
 });
 
 test("Registration builds Telegram-aware system prompt suffixes", () => {

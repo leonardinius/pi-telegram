@@ -163,13 +163,9 @@ export function createTelegramInboundRouteRuntime<
       deps.bridgeRuntime.lifecycle.shouldPreserveQueuedTurnsAsHistory,
     setPreserveQueuedTurnsAsHistory:
       deps.bridgeRuntime.lifecycle.setPreserveQueuedTurnsAsHistory,
-    createTurn: Turns.createTelegramPromptTurnRuntimeBuilder<
-      TMessage,
-      TContext
-    >({
+    createTurn: Turns.createTelegramPromptTurnRuntimeBuilder<TMessage>({
       allocateQueueOrder: deps.bridgeRuntime.queue.allocateItemOrder,
       downloadFile: deps.downloadFile,
-      processAttachments: deps.attachmentHandlerRuntime.process,
     }),
     updateStatus: deps.updateStatus,
     dispatchNextQueuedTelegramTurn: deps.dispatchNextQueuedTelegramTurn,

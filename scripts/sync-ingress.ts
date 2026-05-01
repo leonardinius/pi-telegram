@@ -18,6 +18,14 @@ function run(command: string, args: string[]): Promise<{ code: number; stdout: s
   });
 }
 
+async function hashPassword(plain: string): Promise<string> {
+  const out = await run("caddy", ["hash-password", "--plaintext", plain]);
+  if (out.code !== 0 || !out.stdout.trim()) {
+    throw new Error(`failed to hash password: ${out.stderr || out.stdout}`);
+  }
+  return out.stdout.trim();
+}
+
 function envValue(text: string, key: string): string | undefined {
   const line = text.split(/\r?\n/).find((entry) => entry.startsWith(`${key}=`));
   return line ? line.slice(key.length + 1).trim().replace(/^["']|["']$/g, "") : undefined;
@@ -32,14 +40,19 @@ async function enabled(name: string): Promise<boolean> {
   }
 }
 
-async function appPort(name: string): Promise<number | undefined> {
+async function appEnv(name: string): Promise<{ port?: number; user?: string; pass?: string; publicUrl?: string }> {
   try {
     const env = await fs.readFile(join(root, name, ".env"), "utf8");
     const v = envValue(env, "APP_PORT");
     const n = Number(v);
-    return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : undefined;
+    return {
+      port: Number.isInteger(n) && n >= 1 && n <= 65535 ? n : undefined,
+      user: envValue(env, "APP_BASIC_AUTH_USER") || "pidev0",
+      pass: envValue(env, "APP_BASIC_AUTH_PASS"),
+      publicUrl: envValue(env, "APP_PUBLIC_URL"),
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -49,12 +62,14 @@ async function main() {
   for (const name of names) {
     if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) continue;
     if (!(await enabled(name))) continue;
-    const port = await appPort(name);
-    if (!port) {
+    const app = await appEnv(name);
+    if (!app.port) {
       console.log(`skip ${name}: APP_PORT missing/invalid`);
       continue;
     }
-    routes.push(`${name}-${baseDomain} {\n  reverse_proxy 127.0.0.1:${port}\n}`);
+    const host = (app.publicUrl || `https://${name}-${baseDomain}/`).replace(/^https?:\/\//, "").replace(/\/$/, "");
+    const auth = app.pass ? `\n  basicauth {\n    ${app.user || "pidev0"} ${await hashPassword(app.pass)}\n  }` : "";
+    routes.push(`http://${host} {${auth}\n  reverse_proxy 127.0.0.1:${app.port}\n}`);
   }
 
   const content = [

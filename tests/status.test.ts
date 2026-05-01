@@ -128,7 +128,6 @@ test("Bridge status runtime builds status state from live ports", () => {
     getRecentRuntimeEvents: () => [
       { at: 1000, category: "api", message: "ok" },
     ],
-    getRuntimeLockState: () => "active here",
   });
   runtime.updateStatus({
     ui: {
@@ -148,7 +147,6 @@ test("Bridge status runtime builds status state from live ports", () => {
     "connection:",
     "- bot: @demo_bot",
     "- allowed user: 7",
-    "- owner: active here",
     "",
     "polling:",
     "- state: running",

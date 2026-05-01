@@ -25,6 +25,56 @@ export interface TelegramTmuxReloadResult {
   error?: string;
 }
 
+export interface TelegramTmuxSendTextResult {
+  ok: boolean;
+  target: string;
+  stdout: string;
+  stderr: string;
+  error?: string;
+}
+
+function resolveTmuxTargetFromList(stdout: string): string {
+  if (/^work-pi:/m.test(stdout)) return "work-pi:0.0";
+  if (/^pi:/m.test(stdout)) return "pi:0.0";
+  const first = stdout.split(/\r?\n/).find((line) => line.trim());
+  if (first) return `${first.split(":")[0]}:0.0`;
+  return "work-pi:0.0";
+}
+
+export function resolveTmuxTarget(): Promise<string> {
+  const explicit = process.env.PI_TMUX_TARGET || process.env.PI_TELEGRAM_TMUX_TARGET;
+  if (explicit) return Promise.resolve(explicit);
+  return new Promise((resolve) => {
+    execFile("tmux", ["ls"], (error, stdout) => {
+      if (error) {
+        resolve("work-pi:0.0");
+        return;
+      }
+      resolve(resolveTmuxTargetFromList(stdout));
+    });
+  });
+}
+
+export async function sendTextToTmuxPane(
+  text: string,
+): Promise<TelegramTmuxSendTextResult> {
+  const target = await resolveTmuxTarget();
+  return new Promise((resolve) => {
+    execFile(
+      "tmux",
+      ["send-keys", "-t", target, "--", text, "Enter"],
+      { timeout: TELEGRAM_TMUX_RELOAD_TIMEOUT_MS },
+      (error, stdout, stderr) => {
+        if (error) {
+          resolve({ ok: false, target, stdout, stderr, error: (error as Error).message });
+          return;
+        }
+        resolve({ ok: true, target, stdout, stderr });
+      },
+    );
+  });
+}
+
 export function triggerTmuxTelegramReload(): Promise<TelegramTmuxReloadResult> {
   return new Promise((resolve) => {
     const target = process.env.PI_TELEGRAM_TMUX_TARGET || "work-pi:0.0";

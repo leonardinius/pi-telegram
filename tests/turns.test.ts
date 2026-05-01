@@ -136,16 +136,10 @@ test("Turn runtime builder routes attachment handler output into prompt text", a
       message_id: number;
       chat: { id: number };
       voice: { file_id: string; mime_type: string };
-    },
-    { cwd: string }
+    }
   >({
     allocateQueueOrder: () => 1,
     downloadFile: async (_fileId, fileName) => `/tmp/${fileName}`,
-    processAttachments: async (files, rawText, ctx) => ({
-      rawText,
-      promptFiles: files,
-      handlerOutputs: [`transcript from ${ctx.cwd}`],
-    }),
   });
   const turn = await buildTurn(
     [
@@ -156,16 +150,15 @@ test("Turn runtime builder routes attachment handler output into prompt text", a
       },
     ],
     [],
-    { cwd: "/work" },
   );
-  assert.equal(turn.statusSummary, "transcript from /work");
+  assert.equal(turn.statusSummary, "(no text)");
   assert.equal(
     turn.historyText,
-    "(no text)\n\n[attachments] /tmp\n- /voice-12.ogg\n\n[outputs]\n- transcript from /work",
+    "(no text)\n\n[attachments] /tmp\n- /voice-12.ogg",
   );
   assert.equal(
     (turn.content[0] as { type: "text"; text: string }).text,
-    "[telegram]\n\n[attachments] /tmp\n- /voice-12.ogg\n\n[outputs]\n- transcript from /work",
+    "[telegram]\n\n[attachments] /tmp\n- /voice-12.ogg",
   );
 });
 

@@ -30,6 +30,8 @@ export type TelegramProjectsCallbackAction =
   | { kind: "up"; name: string }
   | { kind: "down"; name: string }
   | { kind: "health"; name: string }
+  | { kind: "logs"; name: string }
+  | { kind: "password"; name: string }
   | { kind: "create-help" }
   | { kind: "toggle-publish"; name: string }
   | { kind: "delete"; name: string };
@@ -83,6 +85,7 @@ export function parseTelegramProjectsCallbackData(data?: string): TelegramProjec
   if (action === "create") return { kind: "create-help" };
   if (action === "delete") return { kind: "delete", name }; // Handle delete action
   if (action === "publish") return { kind: "toggle-publish", name };
+  if (action === "pass" && PROJECT_NAME_RE.test(name)) return { kind: "password", name };
   if ((action === "up" || action === "down" || action === "health" || action === "logs") && PROJECT_NAME_RE.test(name)) {
     return { kind: action, name };
   }
@@ -107,6 +110,20 @@ export class TelegramProjectsRuntime {
       return /enabled:\s*true\b/i.test(raw);
     } catch {
       return false;
+    }
+  }
+
+  async getProjectPassword(projectName: string): Promise<TelegramProjectsActionResult> {
+    try {
+      const raw = await fs.readFile(join(this.root, projectName, ".env"), "utf8");
+      const userLine = raw.split(/\r?\n/).find((x) => x.startsWith("APP_BASIC_AUTH_USER="));
+      const passLine = raw.split(/\r?\n/).find((x) => x.startsWith("APP_BASIC_AUTH_PASS="));
+      const user = userLine?.slice("APP_BASIC_AUTH_USER=".length).trim() || "pidev0";
+      const pass = passLine?.slice("APP_BASIC_AUTH_PASS=".length).trim();
+      if (!pass) return { ok: false, text: "password not found in .env" };
+      return { ok: true, text: `${user} ${pass}` };
+    } catch (error) {
+      return { ok: false, text: `password read failed: ${String(error)}` };
     }
   }
 
@@ -278,7 +295,7 @@ export class TelegramProjectsRuntime {
       for (const project of projects) {
         lines.push(
           `\n<b>${htmlEscape(project.name)}</b>`,
-          `<code>status=${htmlEscape(project.status)} port=${htmlEscape(project.port || "")} public=${project.publishEnabled ? "ON" : "OFF"}</code> url=${htmlEscape(project.publicUrl || "n/a")}`,
+          `<code>status=${htmlEscape(project.status)} port=${htmlEscape(project.port || "")} public=${project.publishEnabled ? "ON" : "OFF"}</code> url=${htmlEscape(project.publishEnabled ? (project.publicUrl || "n/a") : "n/a")}`,
         );
       }
     }
@@ -296,7 +313,10 @@ export class TelegramProjectsRuntime {
     ];
     // For each project, add health row, controls row, and delete button row
     for (const project of projects.slice(0, 10)) {
-      rows.push([{ text: `🖥️ ${project.name}`, callback_data: `proj:health:${project.name}` }]);
+      rows.push([
+        { text: `🖥️ ${project.name}`, callback_data: `proj:health:${project.name}` },
+        { text: "🔑", callback_data: `proj:pass:${project.name}` },
+      ]);
       rows.push([
         { text: "▶️ Start", callback_data: `proj:up:${project.name}` },
         { text: "⏹ Stop", callback_data: `proj:down:${project.name}` },

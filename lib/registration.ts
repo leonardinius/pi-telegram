@@ -173,12 +173,14 @@ export function registerTelegramAutoReloadCommand(pi: ExtensionAPI): void {
         ]
           .filter(Boolean)
           .join("\n\n");
-        return {
-          content: [{ type: "text", text: `Smoke test failed\n${details}` }],
-        };
+        if (ctx.hasUI) {
+          ctx.ui.notify(`Smoke test failed\n${details}`.slice(0, 1800), "error");
+        }
+        return;
       }
       await ctx.reload();
-      return { content: [{ type: "text", text: "Reloaded after smoke test" }] };
+      if (ctx.hasUI) ctx.ui.notify("Reloaded after smoke test", "info");
+      return;
     },
   });
 }
