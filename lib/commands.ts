@@ -38,6 +38,7 @@ export const TELEGRAM_BOT_COMMANDS: readonly TelegramBotCommandDefinition[] = [
     command: "tgreload",
     description: "🔄 Smoke-test pi and reload extensions",
   },
+  { command: "quit", description: "💀 Kill tmux session" },
 ];export interface TelegramBotCommandRegistrationDeps {
   setMyCommands: (
     commands: readonly TelegramBotCommandDefinition[],
@@ -65,6 +66,7 @@ export type TelegramCommandAction =
   | { kind: "model"; executionMode: "control-queue" }
   | { kind: "extensions"; executionMode: "immediate" }
   | { kind: "projects"; executionMode: "immediate" }
+  | { kind: "quit"; executionMode: "immediate" }
   | {
       kind: "help";
       commandName: "help" | "start";
@@ -84,6 +86,7 @@ export interface TelegramCommandActionDeps<TMessage, TContext> {
   handleModel: (message: TMessage, ctx: TContext) => Promise<void>;
   handleExtensions?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleProjects?: (message: TMessage, ctx: TContext) => Promise<void>;
+  handleQuit?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleHelp: (
     message: TMessage,
     commandName: "help" | "start",
@@ -413,10 +416,15 @@ export interface TelegramCommandRuntimeDeps<
   sendTextReply: (message: TMessage, text: string) => Promise<void>;
   handleExtensions?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleProjects?: (message: TMessage, ctx: TContext) => Promise<void>;
+  handleQuit?: (message: TMessage, ctx: TContext) => Promise<void>;
 }
 
-export const TELEGRAM_HELP_TEXT =
-  "Send me a message and I will forward it to pi. Commands: /status, /model, /projects, /compact, /stop, /extensions, /tgreload.";
+export function buildTelegramHelpText(
+  commands: readonly TelegramBotCommandDefinition[] = TELEGRAM_BOT_COMMANDS,
+): string {
+  const commandList = commands.map((item) => `/${item.command}`).join(", ");
+  return `Send me a message and I will forward it to pi. Commands: ${commandList}.`;
+}
 
 function getTelegramCommandErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -455,6 +463,8 @@ export function buildTelegramCommandAction(
       return { kind: "extensions", executionMode: "immediate" };
     case "projects":
       return { kind: "projects", executionMode: "immediate" };
+    case "quit":
+      return { kind: "quit", executionMode: "immediate" };
     case "help":
     case "start":
       return { kind: "help", commandName, executionMode: "immediate" };
@@ -535,7 +545,7 @@ export async function handleTelegramHelpCommand(
   commandName: "help" | "start",
   deps: TelegramHelpCommandDeps,
 ): Promise<void> {
-  let helpText = TELEGRAM_HELP_TEXT;
+  let helpText = buildTelegramHelpText();
   if (commandName === "start") {
     try {
       await deps.registerBotCommands();
@@ -553,6 +563,53 @@ export async function handleTelegramHelpCommand(
     persistConfig: deps.persistConfig,
     updateStatus: deps.updateStatus,
   });
+}
+
+const TELEGRAM_QUIT_PHRASES = [
+  "Принял йаду ☠️ Умираю красиво...",
+  "Отключаюсь театрально. Занавес.",
+  "Пора в цифровой закат. Исчезаю.",
+  "Я пал в бою с задачами. До перезапуска.",
+  "Самоликвидация через 3... 2... ой, уже.",
+] as const;
+
+function getRandomTelegramQuitPhrase(): string {
+  return TELEGRAM_QUIT_PHRASES[
+    Math.floor(Math.random() * TELEGRAM_QUIT_PHRASES.length)
+  ];
+}
+
+export interface TelegramQuitCommandDeps extends TelegramRuntimeEventRecorderPort {
+  hasAbortHandler: () => boolean;
+  abortCurrentTurn: () => void;
+  clearPendingModelSwitch: () => void;
+  hasQueuedTelegramItems: () => boolean;
+  setPreserveQueuedTurnsAsHistory: (preserve: boolean) => void;
+  updateStatus: () => void;
+  sendTextReply: (text: string) => Promise<void>;
+  killTmuxSession: () => Promise<void>;
+}
+
+export async function handleTelegramQuitCommand(
+  deps: TelegramQuitCommandDeps,
+): Promise<void> {
+  if (deps.hasAbortHandler()) {
+    deps.clearPendingModelSwitch();
+    if (deps.hasQueuedTelegramItems()) {
+      deps.setPreserveQueuedTurnsAsHistory(true);
+    }
+    deps.abortCurrentTurn();
+  }
+  deps.updateStatus();
+  await deps.sendTextReply(getRandomTelegramQuitPhrase());
+
+  setTimeout(() => {
+    void deps.killTmuxSession().catch(async (error) => {
+      const errorMessage = getTelegramCommandErrorMessage(error);
+      deps.recordRuntimeEvent?.("quit", error);
+      await deps.sendTextReply(`Не смог умереть с первого раза: ${errorMessage}`);
+    });
+  }, 1500);
 }
 
 export async function handleTelegramStatusCommand<TContext>(
@@ -603,6 +660,10 @@ export async function executeTelegramCommandAction<TMessage, TContext>(
     case "projects":
       if (!deps.handleProjects) return false;
       await deps.handleProjects(message, ctx);
+      return true;
+    case "quit":
+      if (!deps.handleQuit) return false;
+      await deps.handleQuit(message, ctx);
       return true;
     case "help":
       await deps.handleHelp(message, action.commandName, ctx);
@@ -682,6 +743,7 @@ export function createTelegramCommandHandlerTargetRuntime<
     recordRuntimeEvent: deps.recordRuntimeEvent,
     handleExtensions: deps.handleExtensions,
     handleProjects: deps.handleProjects,
+    handleQuit: deps.handleQuit,
   });
 }
 
@@ -716,6 +778,14 @@ export function createTelegramCommandOrPromptRuntime<TMessage, TContext>(
           ? "telegram-tgreload-now"
           : undefined);
       const handled = await deps.handleCommand(commandName, firstMessage, ctx);
+      // try {
+      //   console.error(
+      //     "[tg-debug] dispatchMessages",
+      //     JSON.stringify({ rawText, parsed, commandName, handled }),
+      //   );
+      // } catch {
+      //   // ignore
+      // }
       if (handled) return;
       await deps.enqueueTurn(messages, ctx);
     },
@@ -799,6 +869,7 @@ async function handleTelegramCommandRuntime<
       },
       handleExtensions: deps.handleExtensions,
       handleProjects: deps.handleProjects,
+      handleQuit: deps.handleQuit,
       handleHelp: async (nextMessage, nextCommandName, commandCtx) => {
         await handleTelegramHelpCommand(nextCommandName, {
           senderUserId: nextMessage.from?.id,

@@ -956,8 +956,8 @@ test("Extension runtime runs queued status control before the next queued prompt
     const firstDispatchIndex = runtimeEvents.indexOf(
       "dispatch:[telegram] first request",
     );
-    const statusSendIndex = runtimeEvents.findIndex((event) =>
-      /^send:<b>Context:<\/b>/.test(event),
+    const statusSendIndex = runtimeEvents.findIndex(
+      (event) => /^send:<b>Context:<\/b>/.test(event) || /^edit:<b>Context:<\/b>/.test(event),
     );
     const followUpDispatchIndex = runtimeEvents.indexOf(
       "dispatch:[telegram] follow up after status",
@@ -1093,7 +1093,9 @@ test("Extension runtime runs queued model control before the next queued prompt 
     const firstDispatchIndex = runtimeEvents.indexOf(
       "dispatch:[telegram] first request",
     );
-    const modelMenuIndex = runtimeEvents.indexOf("send:<b>Choose a model:</b>");
+    const modelMenuIndex = runtimeEvents.findIndex(
+      (event) => event === "send:<b>Choose a model:</b>" || event === "edit:<b>Choose a model:</b>",
+    );
     const followUpDispatchIndex = runtimeEvents.indexOf(
       "dispatch:[telegram] follow up after model",
     );

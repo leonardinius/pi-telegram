@@ -136,6 +136,24 @@ export default function (pi: Pi.ExtensionAPI) {
         editMessage: editTelegramMessageText,
       },
     );
+
+  let lastConnectedPingAt = 0;
+  const maybeSendConnectedPing = async (): Promise<void> => {
+    const allowedUserId = configStore.getAllowedUserId();
+    if (!allowedUserId) return;
+    const now = Date.now();
+    if (now - lastConnectedPingAt < 60_000) return;
+    lastConnectedPingAt = now;
+    try {
+      await sendMessage({
+        chat_id: allowedUserId,
+        text: Updates.getRandomTelegramConnectedPhrase(),
+      });
+    } catch {
+      // ignore ping failures
+    }
+  };
+
   const dispatchNextQueuedTelegramTurn =
     Queue.createTelegramQueueDispatchRuntime<Pi.ExtensionContext>({
       ...telegramQueueStore,
@@ -222,6 +240,33 @@ export default function (pi: Pi.ExtensionAPI) {
         await sendTextReply(message.chat.id, message.message_id, text);
       },
     });
+
+  const handleQuitCommand = async (
+    message: Api.TelegramMessage,
+    _ctx: Pi.ExtensionContext,
+  ): Promise<void> => {
+    await Commands.handleTelegramQuitCommand({
+      hasAbortHandler: bridgeRuntime.abort.hasHandler,
+      abortCurrentTurn: bridgeRuntime.abort.abortTurn,
+      clearPendingModelSwitch: modelSwitchController.clearPendingSwitch,
+      hasQueuedTelegramItems: telegramQueueStore.hasQueuedItems,
+      setPreserveQueuedTurnsAsHistory:
+        bridgeRuntime.lifecycle.setPreserveQueuedTurnsAsHistory,
+      updateStatus: () => updateStatus(_ctx),
+      sendTextReply: async (text: string): Promise<void> => {
+        await sendTextReply(message.chat.id, message.message_id, text);
+      },
+      killTmuxSession: async () => {
+        const result = await Runtime.killTmuxTelegramSession();
+        if (!result.ok) {
+          throw new Error(
+            `tmux kill failed (target=${result.target}, session=${result.session}): ${result.error || result.stderr || "unknown"}`,
+          );
+        }
+      },
+      recordRuntimeEvent: runtimeEvents.record,
+    });
+  };
 
   const sendProjectsMenu = async (chatId: number): Promise<void> => {
     await sendInteractiveMessage(
@@ -423,6 +468,7 @@ export default function (pi: Pi.ExtensionAPI) {
               sendTextReply,
               recordRuntimeEvent: runtimeEvents.record,
               handleProjects: handleProjectsCommand,
+              handleQuit: handleQuitCommand,
               // New: /extensions command — list available PI slash commands excluding BTW
               handleExtensions: async (message, _ctx) => {
                 try {
@@ -555,6 +601,7 @@ export default function (pi: Pi.ExtensionAPI) {
     stopTypingLoop: bridgeRuntime.typing.stop,
     updateStatus,
     recordRuntimeEvent: runtimeEvents.record,
+    onStarted: () => maybeSendConnectedPing(),
   });
 
   // --- Extension Registration ---
