@@ -123,7 +123,7 @@ export async function buildIngressConfig(options: {
     const app = await appAuth(options.root, result.name);
     const host = projectHost(result.name, options.baseDomain);
     const auth = app.pass ? `\n  basicauth {\n    ${app.user || "pidev0"} ${await hashPassword(app.pass)}\n  }` : "";
-    routes.push(`http://${host} {${auth}\n  reverse_proxy 127.0.0.1:${result.port}\n}`);
+    routes.push(`http://${host} {${auth}\n  reverse_proxy 127.0.0.1:${result.port} {\n    header_up Host {http.request.host}\n    header_up CF-Connecting-IP {http.request.header.CF-Connecting-IP}\n    header_up CF-IPCountry {http.request.header.CF-IPCountry}\n    header_up CF-Ray {http.request.header.CF-Ray}\n    header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}\n    header_up X-Real-IP {http.request.header.CF-Connecting-IP}\n    header_up X-Forwarded-Proto {http.request.scheme}\n  }\n}`);
   }
 
   return {
