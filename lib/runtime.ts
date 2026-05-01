@@ -25,6 +25,15 @@ export interface TelegramTmuxReloadResult {
   error?: string;
 }
 
+export interface TelegramTmuxKillSessionResult {
+  ok: boolean;
+  target: string;
+  session: string;
+  stdout: string;
+  stderr: string;
+  error?: string;
+}
+
 export interface TelegramTmuxSendTextResult {
   ok: boolean;
   target: string;
@@ -70,6 +79,25 @@ export async function sendTextToTmuxPane(
           return;
         }
         resolve({ ok: true, target, stdout, stderr });
+      },
+    );
+  });
+}
+
+export async function killTmuxTelegramSession(): Promise<TelegramTmuxKillSessionResult> {
+  const target = await resolveTmuxTarget();
+  const session = target.split(":")[0] || target;
+  return new Promise((resolve) => {
+    execFile(
+      "tmux",
+      ["kill-session", "-t", session],
+      { timeout: TELEGRAM_TMUX_RELOAD_TIMEOUT_MS },
+      (error, stdout, stderr) => {
+        if (error) {
+          resolve({ ok: false, target, session, stdout, stderr, error: (error as Error).message });
+          return;
+        }
+        resolve({ ok: true, target, session, stdout, stderr });
       },
     );
   });

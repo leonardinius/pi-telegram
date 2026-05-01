@@ -78,6 +78,7 @@ export interface TelegramInboundRouteRuntimeDeps<
     error: unknown,
     details?: Record<string, unknown>,
   ) => void;
+  handleQuit?: Commands.TelegramCommandActionDeps<any, any>["handleQuit"];
 }
 
 export function createTelegramInboundRouteRuntime<
@@ -153,6 +154,7 @@ export function createTelegramInboundRouteRuntime<
     persistConfig: deps.configStore.persist,
     sendTextReply: deps.sendTextReply,
     recordRuntimeEvent: deps.recordRuntimeEvent,
+    handleQuit: deps.handleQuit,
   });
   const promptEnqueue = Queue.createTelegramPromptEnqueueController<
     TMessage,

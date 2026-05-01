@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 #
 # pi-telegram-start.sh
