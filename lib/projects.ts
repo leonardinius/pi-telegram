@@ -232,20 +232,9 @@ export class TelegramProjectsRuntime {
       const url = port ? `http://127.0.0.1:${port}/` : undefined;
       const publishEnabled = await this.isPublishEnabled(name);
 
-      let publicUrl: string | undefined;
-      const containerId = await shellOut("docker", ["compose", "--env-file", ".env", "-f", "compose.yaml", "ps", "-q", "app"], path);
-      const id = containerId.stdout.trim();
-      if (id) {
-        const inspect = await shellOut("docker", ["inspect", "-f", "{{ index .Config.Labels \"com.pi.public_url\" }}", id]);
-        const labelUrl = inspect.stdout.trim();
-        if (inspect.code === 0 && labelUrl && labelUrl !== "<no value>") publicUrl = labelUrl;
-      }
-
-      if (!publicUrl) {
-        const resolvedBase = await this.getResolvedPublicBaseUrl();
-        const base = resolvedBase?.replace(/\/$/, "");
-        publicUrl = publishEnabled && base ? `https://${name}-${base.replace(/^https?:\/\//, "")}/` : undefined;
-      }
+      const resolvedBase = await this.getResolvedPublicBaseUrl();
+      const base = resolvedBase?.replace(/\/$/, "");
+      const publicUrl = publishEnabled && base ? `https://${name}-${base.replace(/^https?:\/\//, "")}/` : undefined;
 
       projects.push({ name, path, port, url, publicUrl, publishEnabled, status });
     }
