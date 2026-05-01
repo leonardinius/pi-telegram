@@ -351,6 +351,40 @@ export default function (pi: Pi.ExtensionAPI) {
     return true;
   };
 
+  const handleFreeModelCallback = async (
+    query: Api.TelegramCallbackQuery,
+  ): Promise<boolean> => {
+    if (!query.data?.startsWith("freemodel:pick:")) return false;
+    const id = query.data.slice("freemodel:pick:".length);
+    try {
+      const data = await FreeModel.getModels();
+      const model = data.models.find((m) => m.id === id);
+      if (!model) {
+        await answerCallbackQuery(query.id, "Model not found.");
+        return true;
+      }
+      const isIdle = Pi.isExtensionContextIdle();
+      if (isIdle) {
+        const switched = await piRuntime.setModel(id);
+        if (switched) {
+          await answerCallbackQuery(query.id, `Switched to ${model.name}`);
+        } else {
+          await answerCallbackQuery(query.id, "Failed to switch model.");
+        }
+      } else {
+        await answerCallbackQuery(query.id, `Switching to ${model.name}...`);
+        modelSwitchController.stagePendingSwitch({
+          model: { id, name: model.name } as ActivePiModel,
+          ctx: undefined as unknown as Pi.ExtensionContext,
+        });
+      }
+    } catch (error) {
+      const err = error instanceof Error ? error.message : String(error);
+      await answerCallbackQuery(query.id, `Error: ${err}`);
+    }
+    return true;
+  };
+
   // --- Polling ---
 
   const pollingRuntime = Polling.createTelegramPollingControllerRuntime<
@@ -381,6 +415,7 @@ export default function (pi: Pi.ExtensionAPI) {
       answerCallbackQuery,
       handleAuthorizedTelegramCallbackQuery: async (query, ctx) => {
         if (await handleProjectsCallback(query)) return;
+        if (await handleFreeModelCallback(query)) return;
         await Menu.createTelegramMenuCallbackHandlerForContext<
           Api.TelegramCallbackQuery,
           Pi.ExtensionContext,
