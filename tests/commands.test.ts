@@ -34,15 +34,21 @@ test("Command helpers expose Telegram bot command definitions", () => {
   assert.deepEqual(TELEGRAM_BOT_COMMANDS, [
     {
       command: "start",
-      description: "Show help and pair the Telegram bridge",
+      description: "🚀 Start, help, and pair Telegram",
     },
     {
       command: "status",
-      description: "Show model, usage, cost, and context status",
+      description: "📊 Show model, usage, cost, and context",
     },
-    { command: "model", description: "Open the interactive model selector" },
-    { command: "compact", description: "Compact the current pi session" },
-    { command: "stop", description: "Abort the current pi task" },
+    { command: "model", description: "🧠 Open model selector" },
+    { command: "compact", description: "🧹 Compact current pi session" },
+    { command: "stop", description: "🛑 Abort current pi task" },
+    { command: "extensions", description: "🧩 List available pi commands" },
+    { command: "projects", description: "📦 Manage local projects" },
+    {
+      command: "tgreload",
+      description: "🔄 Smoke-test pi and reload extensions",
+    },
   ]);
 });
 

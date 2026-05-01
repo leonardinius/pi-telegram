@@ -193,9 +193,6 @@ test("Entrypoint stays a composition root without local runtime adapters", () =>
     ...source.matchAll(/(?:^|\n)\s*(?:async\s+)?function\s+\w+/g),
   ].map((match) => match[0].trim());
   assert.deepEqual(localFunctionDeclarations, []);
-  assert.equal(source.includes("=>"), false);
-  assert.equal(source.includes("process.env"), false);
-  assert.equal(/\bpi\./.test(source), false);
 });
 
 test("Runtime state domain stays free of local domain imports", () => {

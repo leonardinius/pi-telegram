@@ -1,3 +1,8 @@
+/**
+ * Telegram projects runtime and command helpers
+ * Owns project list/render/action flows used by the Telegram projects menu
+ */
+
 import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
