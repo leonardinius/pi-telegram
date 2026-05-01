@@ -1,7 +1,13 @@
 #!/usr/bin/env node
+/**
+ * Dynamic Caddy ingress sync for project publishing
+ * Reuses the shared fail-closed expose validator before generating any route
+ */
+
 import { promises as fs } from "node:fs";
 import { execFile } from "node:child_process";
-import { join } from "node:path";
+
+import { readProjectEnv, validateProjectsExpose, type ExposeValidationResult } from "./expose-validation.ts";
 
 const root = process.env.WORK_PROJECTS_ROOT || "/home/agent/work/projects";
 const baseDomain = (process.env.PI_PROJECTS_PUBLIC_BASE_URL || "apps.it101.org").replace(/^https?:\/\//, "").replace(/\/$/, "");
@@ -26,50 +32,32 @@ async function hashPassword(plain: string): Promise<string> {
   return out.stdout.trim();
 }
 
-function envValue(text: string, key: string): string | undefined {
-  const line = text.split(/\r?\n/).find((entry) => entry.startsWith(`${key}=`));
-  return line ? line.slice(key.length + 1).trim().replace(/^["']|["']$/g, "") : undefined;
+function logSkip(result: ExposeValidationResult): void {
+  if (result.ok) return;
+  console.log(JSON.stringify({ event: "ingress_skip", project: result.name, ok: false, reason: result.reason, detail: result.detail || "" }));
 }
 
-async function enabled(name: string): Promise<boolean> {
-  try {
-    const y = await fs.readFile(join(root, name, ".expose.yml"), "utf8");
-    return /enabled:\s*true\b/i.test(y);
-  } catch {
-    return false;
-  }
-}
-
-async function appEnv(name: string): Promise<{ port?: number; user?: string; pass?: string; publicUrl?: string }> {
-  try {
-    const env = await fs.readFile(join(root, name, ".env"), "utf8");
-    const v = envValue(env, "APP_PORT");
-    const n = Number(v);
-    return {
-      port: Number.isInteger(n) && n >= 1 && n <= 65535 ? n : undefined,
-      user: envValue(env, "APP_BASIC_AUTH_USER") || "pidev0",
-      pass: envValue(env, "APP_BASIC_AUTH_PASS"),
-      publicUrl: envValue(env, "APP_PUBLIC_URL"),
-    };
-  } catch {
-    return {};
-  }
+async function appAuth(name: string): Promise<{ user: string; pass?: string; publicUrl?: string }> {
+  const env = await readProjectEnv(root, name);
+  return {
+    user: env.APP_BASIC_AUTH_USER || "pidev0",
+    pass: env.APP_BASIC_AUTH_PASS,
+    publicUrl: env.APP_PUBLIC_URL,
+  };
 }
 
 async function main() {
-  const names = await fs.readdir(root).catch(() => [] as string[]);
+  const results = await validateProjectsExpose(root);
   const routes: string[] = [];
-  for (const name of names) {
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) continue;
-    if (!(await enabled(name))) continue;
-    const app = await appEnv(name);
-    if (!app.port) {
-      console.log(`skip ${name}: APP_PORT missing/invalid`);
+  for (const result of results) {
+    if (!result.ok) {
+      logSkip(result);
       continue;
     }
-    const host = (app.publicUrl || `https://${name}-${baseDomain}/`).replace(/^https?:\/\//, "").replace(/\/$/, "");
+    const app = await appAuth(result.name);
+    const host = (app.publicUrl || `https://${result.name}-${baseDomain}/`).replace(/^https?:\/\//, "").replace(/\/$/, "");
     const auth = app.pass ? `\n  basicauth {\n    ${app.user || "pidev0"} ${await hashPassword(app.pass)}\n  }` : "";
-    routes.push(`http://${host} {${auth}\n  reverse_proxy 127.0.0.1:${app.port}\n}`);
+    routes.push(`http://${host} {${auth}\n  reverse_proxy 127.0.0.1:${result.port}\n}`);
   }
 
   const content = [
@@ -110,4 +98,7 @@ async function main() {
   console.log(`ok: ${routes.length} published routes`);
 }
 
-main();
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});
