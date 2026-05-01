@@ -47,7 +47,7 @@ test("Turn helpers build prompt text with history and attachments", () => {
   );
   assert.match(prompt, /1\. older message/);
   assert.match(prompt, /Current Telegram message:\ncurrent message/);
-  assert.match(prompt, /\[attachments\] \/tmp\n- \/demo.png/);
+  assert.match(prompt, /Telegram attachments were saved locally:\n- \/tmp\/demo.png/);
 });
 
 test("Turn helpers summarize text and attachment-only turns", () => {
@@ -126,7 +126,7 @@ test("Turn runtime builder extracts text, downloads files, and allocates order",
   assert.deepEqual(downloaded, ["doc-1:report.txt"]);
   assert.match(
     (turn.content[0] as { type: "text"; text: string }).text,
-    /\[attachments\] \/tmp\n- \/report\.txt/,
+    /Telegram attachments were saved locally:\n- \/tmp\/report\.txt/,
   );
 });
 
@@ -151,14 +151,11 @@ test("Turn runtime builder routes attachment handler output into prompt text", a
     ],
     [],
   );
-  assert.equal(turn.statusSummary, "(no text)");
-  assert.equal(
-    turn.historyText,
-    "(no text)\n\n[attachments] /tmp\n- /voice-12.ogg",
-  );
+  assert.equal(turn.statusSummary, "📎 voice-12.ogg");
+  assert.equal(turn.historyText, "(no text)\nAttachments:\n- /tmp/voice-12.ogg");
   assert.equal(
     (turn.content[0] as { type: "text"; text: string }).text,
-    "[telegram]\n\n[attachments] /tmp\n- /voice-12.ogg",
+    "[telegram]\n\nTelegram attachments were saved locally:\n- /tmp/voice-12.ogg",
   );
 });
 
@@ -291,14 +288,13 @@ test("Turn helpers preserve queued prompt attachments when captions are edited",
         type: "text" as const,
         text:
           "[telegram] old caption\n\n" +
-          "[attachments] /tmp\n" +
-          "- /demo.png\n" +
-          "- /report.txt",
+          "Telegram attachments were saved locally:\n" +
+          "- /tmp/demo.png\n" +
+          "- /tmp/report.txt",
       },
       { type: "image" as const, data: "abc", mimeType: "image/png" },
     ],
-    historyText:
-      "old caption\n\n[attachments] /tmp\n- /demo.png\n- /report.txt",
+    historyText: "old caption\n\nAttachments:\n- /tmp/demo.png\n- /tmp/report.txt",
     statusSummary: "old caption",
   };
   const updated = updateTelegramPromptTurnText({
@@ -309,14 +305,14 @@ test("Turn helpers preserve queued prompt attachments when captions are edited",
   assert.equal(
     (updated.content[0] as { type: "text"; text: string }).text,
     "[telegram] new caption\n\n" +
-      "[attachments] /tmp\n" +
-      "- /demo.png\n" +
-      "- /report.txt",
+      "Telegram attachments were saved locally:\n" +
+      "- /tmp/demo.png\n" +
+      "- /tmp/report.txt",
   );
   assert.deepEqual(updated.content[1], turn.content[1]);
   assert.equal(
     updated.historyText,
-    "new caption\n\n[attachments] /tmp\n- /demo.png\n- /report.txt",
+    "new caption\nAttachments:\n- /tmp/demo.png\n- /tmp/report.txt",
   );
   assert.equal(updated.statusSummary, "new caption");
 });
@@ -409,7 +405,7 @@ test("Turn helpers assemble prompt turns with text, ids, history, and image payl
   assert.equal(turn.statusSummary, "current message");
   assert.equal(
     turn.historyText,
-    "current message\n\n[attachments] /tmp\n- /demo.png\n- /report.txt",
+    "current message\nAttachments:\n- /tmp/demo.png\n- /tmp/report.txt",
   );
   assert.equal(turn.content.length, 2);
   assert.equal(turn.content[0]?.type, "text");

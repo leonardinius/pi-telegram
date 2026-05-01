@@ -394,6 +394,8 @@ test("Extension entrypoint wires registration domains into the pi API", () => {
       "telegram-status",
       "telegram-connect",
       "telegram-disconnect",
+      "telegram-tgreload-now",
+      "tgreload",
     ],
   );
   assert.deepEqual(

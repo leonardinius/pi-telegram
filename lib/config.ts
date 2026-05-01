@@ -5,10 +5,16 @@
 
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
-const AGENT_DIR = join(homedir(), ".pi", "agent");
-const CONFIG_PATH = join(AGENT_DIR, "telegram.json");
+function getDefaultAgentDir(): string {
+  const envDir = process.env.PI_CODING_AGENT_DIR;
+  return envDir ? resolve(envDir) : join(homedir(), ".pi", "agent");
+}
+
+function getDefaultConfigPath(agentDir: string): string {
+  return join(agentDir, "telegram.json");
+}
 
 export interface TelegramConfig {
   botToken?: string;
@@ -64,8 +70,8 @@ export function createTelegramConfigStore(
   options: TelegramConfigStoreOptions = {},
 ): TelegramConfigStore {
   let config: TelegramConfig = options.initialConfig ?? {};
-  const agentDir = options.agentDir ?? AGENT_DIR;
-  const configPath = options.configPath ?? CONFIG_PATH;
+  const agentDir = options.agentDir ?? getDefaultAgentDir();
+  const configPath = options.configPath ?? getDefaultConfigPath(agentDir);
   return {
     get: () => config,
     set: (nextConfig) => {

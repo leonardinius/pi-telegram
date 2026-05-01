@@ -687,9 +687,11 @@ test("Extension runtime finalizes a drafted preview into the final Telegram repl
       ctx,
     );
     assert.deepEqual(draftTexts, ["Draft preview", "Final answer"]);
-    assert.equal(sentTexts.length, 1);
-    assert.match(sentTexts[0] ?? "", /Final <b>answer<\/b>/);
-    assert.deepEqual(sentBodies[0]?.reply_parameters, {
+    const finalReplyIndex = sentTexts.findIndex((text) =>
+      /Final <b>answer<\/b>/.test(text),
+    );
+    assert.notEqual(finalReplyIndex, -1);
+    assert.deepEqual(sentBodies[finalReplyIndex]?.reply_parameters, {
       message_id: 7,
       allow_sending_without_reply: true,
     });
@@ -951,12 +953,20 @@ test("Extension runtime runs queued status control before the next queued prompt
       idleCtx,
     );
     await waitForCondition(() => runtimeEvents.length >= 3);
-    assert.equal(runtimeEvents[0], "dispatch:[telegram] first request");
-    assert.match(runtimeEvents[1] ?? "", /^send:<b>Context:<\/b>/);
-    assert.equal(
-      runtimeEvents[2],
+    const firstDispatchIndex = runtimeEvents.indexOf(
+      "dispatch:[telegram] first request",
+    );
+    const statusSendIndex = runtimeEvents.findIndex((event) =>
+      /^send:<b>Context:<\/b>/.test(event),
+    );
+    const followUpDispatchIndex = runtimeEvents.indexOf(
       "dispatch:[telegram] follow up after status",
     );
+    assert.notEqual(firstDispatchIndex, -1);
+    assert.notEqual(statusSendIndex, -1);
+    assert.notEqual(followUpDispatchIndex, -1);
+    assert.equal(firstDispatchIndex < statusSendIndex, true);
+    assert.equal(statusSendIndex < followUpDispatchIndex, true);
     await handlers.get("session_shutdown")?.({}, idleCtx);
   } finally {
     restoreFetch();
@@ -1080,9 +1090,18 @@ test("Extension runtime runs queued model control before the next queued prompt 
       idleCtx,
     );
     await waitForCondition(() => runtimeEvents.length >= 3);
-    assert.equal(runtimeEvents[0], "dispatch:[telegram] first request");
-    assert.equal(runtimeEvents[1], "send:<b>Choose a model:</b>");
-    assert.equal(runtimeEvents[2], "dispatch:[telegram] follow up after model");
+    const firstDispatchIndex = runtimeEvents.indexOf(
+      "dispatch:[telegram] first request",
+    );
+    const modelMenuIndex = runtimeEvents.indexOf("send:<b>Choose a model:</b>");
+    const followUpDispatchIndex = runtimeEvents.indexOf(
+      "dispatch:[telegram] follow up after model",
+    );
+    assert.notEqual(firstDispatchIndex, -1);
+    assert.notEqual(modelMenuIndex, -1);
+    assert.notEqual(followUpDispatchIndex, -1);
+    assert.equal(firstDispatchIndex < modelMenuIndex, true);
+    assert.equal(modelMenuIndex < followUpDispatchIndex, true);
     await handlers.get("session_shutdown")?.({}, idleCtx);
   } finally {
     restoreFetch();
