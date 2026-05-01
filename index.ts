@@ -423,42 +423,6 @@ export default function (pi: Pi.ExtensionAPI) {
               sendTextReply,
               recordRuntimeEvent: runtimeEvents.record,
               handleProjects: handleProjectsCommand,
-              handlePiTmux: async (message, _ctx) => {
-                try {
-                  const raw = (message.text || message.caption || "").trim();
-                  const parsed = Commands.parseTelegramCommand(raw);
-                  const text = parsed?.name === "pi-tmux" ? parsed.args.trim() : "";
-                  if (!text) {
-                    await sendTextReply(
-                      message.chat.id,
-                      message.message_id,
-                      "Usage: /pi-tmux <text>",
-                    );
-                    return;
-                  }
-                  const result = await Runtime.sendTextToTmuxPane(text);
-                  if (!result.ok) {
-                    await sendTextReply(
-                      message.chat.id,
-                      message.message_id,
-                      `pi-tmux failed: ${result.error || result.stderr || "unknown error"}`,
-                    );
-                    return;
-                  }
-                  await sendTextReply(
-                    message.chat.id,
-                    message.message_id,
-                    `Sent to tmux target ${result.target}`,
-                  );
-                } catch (error) {
-                  const err = error instanceof Error ? error.message : String(error);
-                  await sendTextReply(
-                    message.chat.id,
-                    message.message_id,
-                    `pi-tmux failed: ${err}`,
-                  );
-                }
-              },
               // New: /extensions command — list available PI slash commands excluding BTW
               handleExtensions: async (message, _ctx) => {
                 try {

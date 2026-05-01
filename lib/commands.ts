@@ -35,10 +35,6 @@ export const TELEGRAM_BOT_COMMANDS: readonly TelegramBotCommandDefinition[] = [
   { command: "extensions", description: "🧩 List available pi commands" },
   { command: "projects", description: "📦 Manage local projects" },
   {
-    command: "pi-tmux",
-    description: "⌨️ Send text to tmux pane (/pi-tmux <text>)",
-  },
-  {
     command: "tgreload",
     description: "🔄 Smoke-test pi and reload extensions",
   },
@@ -69,7 +65,6 @@ export type TelegramCommandAction =
   | { kind: "model"; executionMode: "control-queue" }
   | { kind: "extensions"; executionMode: "immediate" }
   | { kind: "projects"; executionMode: "immediate" }
-  | { kind: "piTmux"; executionMode: "immediate" }
   | {
       kind: "help";
       commandName: "help" | "start";
@@ -89,7 +84,6 @@ export interface TelegramCommandActionDeps<TMessage, TContext> {
   handleModel: (message: TMessage, ctx: TContext) => Promise<void>;
   handleExtensions?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleProjects?: (message: TMessage, ctx: TContext) => Promise<void>;
-  handlePiTmux?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleHelp: (
     message: TMessage,
     commandName: "help" | "start",
@@ -419,11 +413,10 @@ export interface TelegramCommandRuntimeDeps<
   sendTextReply: (message: TMessage, text: string) => Promise<void>;
   handleExtensions?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleProjects?: (message: TMessage, ctx: TContext) => Promise<void>;
-  handlePiTmux?: (message: TMessage, ctx: TContext) => Promise<void>;
 }
 
 export const TELEGRAM_HELP_TEXT =
-  "Send me a message and I will forward it to pi. Commands: /status, /model, /projects, /pi-tmux, /compact, /stop, /extensions, /tgreload.";
+  "Send me a message and I will forward it to pi. Commands: /status, /model, /projects, /compact, /stop, /extensions, /tgreload.";
 
 function getTelegramCommandErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -462,8 +455,6 @@ export function buildTelegramCommandAction(
       return { kind: "extensions", executionMode: "immediate" };
     case "projects":
       return { kind: "projects", executionMode: "immediate" };
-    case "pi-tmux":
-      return { kind: "piTmux", executionMode: "immediate" };
     case "help":
     case "start":
       return { kind: "help", commandName, executionMode: "immediate" };
@@ -613,10 +604,6 @@ export async function executeTelegramCommandAction<TMessage, TContext>(
       if (!deps.handleProjects) return false;
       await deps.handleProjects(message, ctx);
       return true;
-    case "piTmux":
-      if (!deps.handlePiTmux) return false;
-      await deps.handlePiTmux(message, ctx);
-      return true;
     case "help":
       await deps.handleHelp(message, action.commandName, ctx);
       return true;
@@ -695,7 +682,6 @@ export function createTelegramCommandHandlerTargetRuntime<
     recordRuntimeEvent: deps.recordRuntimeEvent,
     handleExtensions: deps.handleExtensions,
     handleProjects: deps.handleProjects,
-    handlePiTmux: deps.handlePiTmux,
   });
 }
 
@@ -813,7 +799,6 @@ async function handleTelegramCommandRuntime<
       },
       handleExtensions: deps.handleExtensions,
       handleProjects: deps.handleProjects,
-      handlePiTmux: deps.handlePiTmux,
       handleHelp: async (nextMessage, nextCommandName, commandCtx) => {
         await handleTelegramHelpCommand(nextCommandName, {
           senderUserId: nextMessage.from?.id,
