@@ -478,10 +478,11 @@ test("Update runtime can execute directly from raw updates", async () => {
       },
     },
   );
-  assert.equal(events.length, 3);
-  assert.equal(events[0], "pair");
-  assert.match(events[1] ?? "", /^reply:/);
-  assert.equal(events[2], "message");
+  assert.deepEqual(events, [
+    "pair",
+    "reply:Telegram bridge paired with this account.",
+    "message",
+  ]);
 });
 
 test("Update runtime routes edited messages without creating normal message turns", async () => {
@@ -587,9 +588,10 @@ test("Update runtime handles callback deny and message pair flows", async () => 
       },
     },
   );
-  assert.equal(events.length, 4);
-  assert.equal(events[0], "pair:1");
-  assert.equal(events[1], "answer:cb:This bot is not authorized for your account.");
-  assert.match(events[2] ?? "", /^reply:7:9:/);
-  assert.equal(events[3], "message");
+  assert.deepEqual(events, [
+    "pair:1",
+    "answer:cb:This bot is not authorized for your account.",
+    "reply:7:9:Telegram bridge paired with this account.",
+    "message",
+  ]);
 });

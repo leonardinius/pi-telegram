@@ -27,7 +27,7 @@ import {
   parseTelegramCommand,
   registerTelegramBotCommands,
   TELEGRAM_BOT_COMMANDS,
-  buildTelegramHelpText,
+  TELEGRAM_HELP_TEXT,
 } from "../lib/commands.ts";
 
 test("Command helpers expose Telegram bot command definitions", () => {
@@ -49,7 +49,6 @@ test("Command helpers expose Telegram bot command definitions", () => {
       command: "tgreload",
       description: "🔄 Smoke-test pi and reload extensions",
     },
-    { command: "quit", description: "💀 Kill tmux session" },
   ]);
 });
 
@@ -562,12 +561,12 @@ test("Command helpers send help, register start commands, and pair first sender"
   });
   assert.equal(allowedUserId, 7);
   assert.deepEqual(events, [
-    `reply:${buildTelegramHelpText()}`,
+    `reply:${TELEGRAM_HELP_TEXT}`,
     "pair:7",
     "persist",
     "status",
     "register",
-    `reply:${buildTelegramHelpText()}`,
+    `reply:${TELEGRAM_HELP_TEXT}`,
   ]);
 });
 
@@ -592,7 +591,7 @@ test("Command helpers include start registration warnings in help replies", asyn
     },
   });
   assert.deepEqual(events, [
-    `${buildTelegramHelpText()}\n\nWarning: failed to register bot commands menu: menu unavailable`,
+    `${TELEGRAM_HELP_TEXT}\n\nWarning: failed to register bot commands menu: menu unavailable`,
   ]);
 });
 
@@ -727,7 +726,7 @@ test("Command runtime routes commands through runtime ports", async () => {
     "enqueue:99:model:⚡ model",
     "model:42",
     "register",
-    `reply:99:${buildTelegramHelpText()}`,
+    `reply:99:${TELEGRAM_HELP_TEXT}`,
     "pair:7",
     "persist",
     "status",
