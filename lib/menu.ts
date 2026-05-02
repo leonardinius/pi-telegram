@@ -15,7 +15,6 @@ import {
   THINKING_LEVELS,
   type ThinkingLevel,
 } from "./model.ts";
-import type { FreeModel } from "./freemodel.ts";
 const TELEGRAM_MODEL_MENU_CACHE_TTL_MS = 5000;
 const TELEGRAM_MODEL_MENU_STATE_TTL_MS = 10 * 60 * 1000;
 const MAX_STORED_TELEGRAM_MODEL_MENUS = 50;
@@ -1530,28 +1529,5 @@ export function sendTelegramModelMenuMessage(
     state,
     buildTelegramModelMenuRenderPayload(state, activeModel),
     deps,
-  );
-}
-
-export async function openTelegramFreeModelMenu(
-  chatId: number,
-  replyToMessageId: number | undefined,
-  models: FreeModel[],
-  deps: TelegramMenuMessageRuntimeDeps,
-): Promise<number | undefined> {
-  const sorted = [...models].sort((a, b) => a.rank - b.rank);
-  const replyMarkup: TelegramReplyMarkup = {
-    inline_keyboard: sorted.map((model) => [
-      {
-        text: model.name,
-        callback_data: `freemodel:pick:${model.id}`,
-      },
-    ]),
-  };
-  return deps.sendInteractiveMessage(
-    chatId,
-    "Choose a free model:",
-    "html",
-    replyMarkup,
   );
 }

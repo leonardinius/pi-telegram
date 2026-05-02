@@ -7,7 +7,6 @@ import * as Api from "./lib/api.ts";
 import * as Attachments from "./lib/attachments.ts";
 import * as Commands from "./lib/commands.ts";
 import * as Config from "./lib/config.ts";
-import * as FreeModel from "./lib/freemodel.ts";
 import * as Media from "./lib/media.ts";
 import * as Menu from "./lib/menu.ts";
 import * as Model from "./lib/model.ts";
@@ -351,40 +350,6 @@ export default function (pi: Pi.ExtensionAPI) {
     return true;
   };
 
-  const handleFreeModelCallback = async (
-    query: Api.TelegramCallbackQuery,
-    ctx: Pi.ExtensionContext,
-  ): Promise<boolean> => {
-    if (!query.data?.startsWith("freemodel:pick:")) return false;
-    const id = query.data.slice("freemodel:pick:".length);
-    try {
-      const { data } = await FreeModel.getModels();
-      const model = data.models.find((m) => m.id === id);
-      if (!model) {
-        await answerCallbackQuery(query.id, "Model not found.");
-        return true;
-      }
-      await answerCallbackQuery(query.id, `Switching to ${model.name}...`);
-      const isIdle = Pi.isExtensionContextIdle(ctx);
-      if (isIdle) {
-        // @ts-ignore: free model selection doesn't need full Model<any> shape
-        await piRuntime.setModel({ id: model.id, name: model.name } as any);
-        currentModelRuntime.setCurrentModel({ id: model.id, name: model.name } as any, ctx);
-      } else {
-        // @ts-ignore: free model selection doesn't need full Model<any> shape
-        modelSwitchController.stagePendingSwitch(
-          { model: { id: model.id, name: model.name } } as any,
-          ctx,
-        );
-      }
-      updateStatus(ctx);
-    } catch (error) {
-      const err = error instanceof Error ? error.message : String(error);
-      await answerCallbackQuery(query.id, `Error: ${err}`);
-    }
-    return true;
-  };
-
   // --- Polling ---
 
   const pollingRuntime = Polling.createTelegramPollingControllerRuntime<
@@ -415,7 +380,6 @@ export default function (pi: Pi.ExtensionAPI) {
       answerCallbackQuery,
       handleAuthorizedTelegramCallbackQuery: async (query, ctx) => {
         if (await handleProjectsCallback(query)) return;
-        if (await handleFreeModelCallback(query, ctx)) return;
         await Menu.createTelegramMenuCallbackHandlerForContext<
           Api.TelegramCallbackQuery,
           Pi.ExtensionContext,
@@ -530,29 +494,6 @@ export default function (pi: Pi.ExtensionAPI) {
                     message.chat.id,
                     message.message_id,
                     `Failed to list commands: ${err}`,
-                  );
-                }
-              },
-              handleFreeModel: async (message: Api.TelegramMessage, _ctx: Pi.ExtensionContext) => {
-                try {
-                  const { data, isStale } = await FreeModel.getModels();
-                  await sendTextReply(
-                    message.chat.id,
-                    message.message_id,
-                    FreeModel.generateSummary(data, isStale),
-                  );
-                  await Menu.openTelegramFreeModelMenu(
-                    message.chat.id,
-                    message.message_id,
-                    data.models,
-                    { sendInteractiveMessage, editInteractiveMessage },
-                  );
-                } catch (error) {
-                  const err = error instanceof Error ? error.message : String(error);
-                  await sendTextReply(
-                    message.chat.id,
-                    message.message_id,
-                    `⚠️ Failed to load free models. Try again later.`,
                   );
                 }
               },
