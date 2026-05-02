@@ -86,7 +86,7 @@ export interface TelegramCommandActionDeps<TMessage, TContext> {
   handleAutoReload?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleStatus: (message: TMessage, ctx: TContext) => Promise<void>;
   handleModel: (message: TMessage, ctx: TContext) => Promise<void>;
-  handleFreeModel: (message: TMessage, ctx: TContext) => Promise<void>;
+  handleFreeModel?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleExtensions?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleProjects?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleQuit?: (message: TMessage, ctx: TContext) => Promise<void>;
@@ -634,6 +634,14 @@ export async function handleTelegramModelCommand<TContext>(
   deps.enqueueControlItem("model", "⚡ model", deps.openModelMenu);
 }
 
+export async function handleTelegramFreeModelCommand<TContext>(
+  deps: TelegramQueuedControlCommandDeps<TContext> & {
+    showFreeModelMenu: (ctx: TContext) => Promise<void>;
+  },
+): Promise<void> {
+  deps.enqueueControlItem("freemodel", "⚡ freemodel", deps.showFreeModelMenu);
+}
+
 export async function executeTelegramCommandAction<TMessage, TContext>(
   action: TelegramCommandAction,
   message: TMessage,
@@ -660,6 +668,7 @@ export async function executeTelegramCommandAction<TMessage, TContext>(
       await deps.handleModel(message, ctx);
       return true;
     case "freemodel":
+      if (!deps.handleFreeModel) return false;
       await deps.handleFreeModel(message, ctx);
       return true;
     case "extensions":
@@ -753,6 +762,7 @@ export function createTelegramCommandHandlerTargetRuntime<
     handleExtensions: deps.handleExtensions,
     handleProjects: deps.handleProjects,
     handleQuit: deps.handleQuit,
+    handleFreeModel: deps.handleFreeModel,
   });
 }
 
@@ -787,14 +797,14 @@ export function createTelegramCommandOrPromptRuntime<TMessage, TContext>(
           ? "telegram-tgreload-now"
           : undefined);
       const handled = await deps.handleCommand(commandName, firstMessage, ctx);
-      // try {
-      //   console.error(
-      //     "[tg-debug] dispatchMessages",
-      //     JSON.stringify({ rawText, parsed, commandName, handled }),
-      //   );
-      // } catch {
-      //   // ignore
-      // }
+      try {
+        console.error(
+          "[tg-debug] dispatchMessages",
+          JSON.stringify({ rawText, parsed, commandName, handled }),
+        );
+      } catch {
+        // ignore
+      }
       if (handled) return;
       await deps.enqueueTurn(messages, ctx);
     },
@@ -879,6 +889,7 @@ async function handleTelegramCommandRuntime<
       handleExtensions: deps.handleExtensions,
       handleProjects: deps.handleProjects,
       handleQuit: deps.handleQuit,
+      handleFreeModel: deps.handleFreeModel,
       handleHelp: async (nextMessage, nextCommandName, commandCtx) => {
         await handleTelegramHelpCommand(nextCommandName, {
           senderUserId: nextMessage.from?.id,
