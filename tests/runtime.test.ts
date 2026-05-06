@@ -1093,7 +1093,7 @@ test("Extension runtime runs queued model control before the next queued prompt 
     const firstDispatchIndex = runtimeEvents.indexOf(
       "dispatch:[telegram] first request",
     );
-    const modelMenuIndex = runtimeEvents.indexOf("send:<b>Choose a model:</b>");
+    const modelMenuIndex = runtimeEvents.indexOf("send:<b>Choose a provider:</b>");
     const followUpDispatchIndex = runtimeEvents.indexOf(
       "dispatch:[telegram] follow up after model",
     );
@@ -1514,7 +1514,7 @@ test("Extension runtime applies idle model picks immediately and refreshes statu
     await handlers.get("session_start")?.({}, ctx);
     await commands.get("telegram-connect")?.handler("", ctx);
     await waitForCondition(() =>
-      runtimeEvents.some((event) => event === "send:<b>Choose a model:</b>"),
+      runtimeEvents.some((event) => event === "send:<b>Choose a provider:</b>"),
     );
     const statusCountBeforePick = statusEvents.length;
     secondUpdates.resolve(createRuntimeTelegramApiResponse([
@@ -1522,7 +1522,20 @@ test("Extension runtime applies idle model picks immediately and refreshes statu
         _: "other",
         update_id: 2,
         callback_query: {
-          id: "cb-idle-1",
+          id: "cb-idle-1a",
+          from: { id: 77, is_bot: false, first_name: "Test" },
+          data: "model:provider:anthropic",
+          message: {
+            message_id: 100,
+            chat: { id: 99, type: "private" },
+          },
+        },
+      },
+      {
+        _: "other",
+        update_id: 3,
+        callback_query: {
+          id: "cb-idle-1b",
           from: { id: 77, is_bot: false, first_name: "Test" },
           data: "model:pick:0",
           message: {
@@ -1629,7 +1642,7 @@ test("Extension runtime switches model in flight and dispatches a continuation t
     await handlers.get("session_start")?.({}, ctx);
     await commands.get("telegram-connect")?.handler("", ctx);
     await waitForCondition(() =>
-      runtimeEvents.some((event) => event === "send:<b>Choose a model:</b>"),
+      runtimeEvents.some((event) => event === "send:<b>Choose a provider:</b>"),
     );
     secondUpdates.resolve(createRuntimeTelegramApiResponse([
       {
@@ -1655,9 +1668,22 @@ test("Extension runtime switches model in flight and dispatches a continuation t
         _: "other",
         update_id: 3,
         callback_query: {
-          id: "cb-1",
+          id: "cb-1a",
           from: { id: 77, is_bot: false, first_name: "Test" },
-          data: "model:pick:1",
+          data: "model:provider:anthropic",
+          message: {
+            message_id: 100,
+            chat: { id: 99, type: "private" },
+          },
+        },
+      },
+      {
+        _: "other",
+        update_id: 4,
+        callback_query: {
+          id: "cb-1b",
+          from: { id: 77, is_bot: false, first_name: "Test" },
+          data: "model:pick:0",
           message: {
             message_id: 100,
             chat: { id: 99, type: "private" },
@@ -1790,7 +1816,7 @@ test("Extension runtime delays model-switch abort until the active tool finishes
     await handlers.get("session_start")?.({}, ctx);
     await commands.get("telegram-connect")?.handler("", ctx);
     await waitForCondition(() =>
-      runtimeEvents.some((event) => event === "send:<b>Choose a model:</b>"),
+      runtimeEvents.some((event) => event === "send:<b>Choose a provider:</b>"),
     );
     secondUpdates.resolve(createRuntimeTelegramApiResponse([
       {
@@ -1817,9 +1843,22 @@ test("Extension runtime delays model-switch abort until the active tool finishes
         _: "other",
         update_id: 3,
         callback_query: {
-          id: "cb-2",
+          id: "cb-2a",
           from: { id: 77, is_bot: false, first_name: "Test" },
-          data: "model:pick:1",
+          data: "model:provider:anthropic",
+          message: {
+            message_id: 100,
+            chat: { id: 99, type: "private" },
+          },
+        },
+      },
+      {
+        _: "other",
+        update_id: 4,
+        callback_query: {
+          id: "cb-2b",
+          from: { id: 77, is_bot: false, first_name: "Test" },
+          data: "model:pick:0",
           message: {
             message_id: 100,
             chat: { id: 99, type: "private" },

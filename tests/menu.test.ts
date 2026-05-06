@@ -8,6 +8,7 @@ import test from "node:test";
 
 import {
   applyTelegramModelPageSelection,
+  applyTelegramModelProviderSelection,
   applyTelegramModelScopeSelection,
   buildModelMenuReplyMarkup,
   buildStatusReplyMarkup,
@@ -15,6 +16,7 @@ import {
   buildTelegramModelMenuRenderPayload,
   buildTelegramModelMenuState,
   buildTelegramModelMenuStateRuntime,
+  buildTelegramProviderMenuReplyMarkup,
   buildTelegramStatusMenuRenderPayload,
   buildTelegramThinkingMenuRenderPayload,
   buildThinkingMenuReplyMarkup,
@@ -37,6 +39,7 @@ import {
   handleTelegramStatusMenuCallbackAction,
   handleTelegramThinkingMenuCallbackAction,
   MODEL_MENU_TITLE,
+  PROVIDER_MENU_TITLE,
   openTelegramModelMenu,
   openTelegramStatusMenu,
   parseTelegramMenuCallbackAction,
@@ -272,6 +275,7 @@ test("Menu runtime builds menu state from settings and model-registry ports", as
 });
 
 test("Menu helpers expose UI constants", () => {
+  assert.equal(PROVIDER_MENU_TITLE, "<b>Choose a provider:</b>");
   assert.equal(MODEL_MENU_TITLE, "<b>Choose a model:</b>");
   assert.equal(TELEGRAM_MODEL_PAGE_SIZE, 6);
 });
@@ -297,6 +301,15 @@ test("Menu helpers build model menu state and parse callback actions", () => {
     kind: "thinking:set",
     level: "high",
   });
+  assert.deepEqual(parseTelegramMenuCallbackAction("model:provider:openai"), {
+    kind: "model",
+    action: "provider",
+    value: "openai",
+  });
+  assert.deepEqual(parseTelegramMenuCallbackAction("model:back"), {
+    kind: "model",
+    action: "back",
+  });
   assert.deepEqual(parseTelegramMenuCallbackAction("model:pick:2"), {
     kind: "model",
     action: "pick",
@@ -309,16 +322,24 @@ test("Menu helpers build model menu state and parse callback actions", () => {
 
 test("Menu helpers apply menu mutations and resolve model selections", () => {
   const modelA = createMenuModel("openai", "gpt-5", true);
+  const modelB = createMenuModel("openai-codex", "codex-1", false);
   const state = createMenuState(2, {
     scope: "all",
     scopedModels: [{ model: modelA, thinkingLevel: "high" }],
-    allModels: [{ model: modelA }],
-    mode: "status",
+    allModels: [{ model: modelA }, { model: modelB }],
+    mode: "provider",
   });
   assert.equal(applyTelegramModelScopeSelection(state, "scoped"), "changed");
   assert.equal(state.scope, "scoped");
+  assert.equal(state.provider, undefined);
+  assert.equal(state.mode, "provider");
   assert.equal(applyTelegramModelScopeSelection(state, "scoped"), "unchanged");
   assert.equal(applyTelegramModelScopeSelection(state, "bad"), "invalid");
+  assert.equal(applyTelegramModelProviderSelection(state, "openai"), "changed");
+  assert.equal(state.provider, "openai");
+  assert.equal(state.mode, "model");
+  assert.equal(applyTelegramModelProviderSelection(state, "openai"), "unchanged");
+  assert.equal(applyTelegramModelProviderSelection(state, "missing"), "invalid");
   assert.equal(applyTelegramModelPageSelection(state, "2"), "changed");
   assert.equal(state.page, 2);
   assert.equal(applyTelegramModelPageSelection(state, "2"), "unchanged");
@@ -359,6 +380,30 @@ test("Menu helpers build model callback plans for paging, selection, and restart
   });
   assert.deepEqual(
     buildTelegramModelCallbackPlan({
+      data: "model:scope:scoped",
+      state,
+      activeModel: modelA,
+      currentThinkingLevel: "medium",
+      isIdle: true,
+      canRestartBusyRun: false,
+      hasActiveToolExecutions: false,
+    }),
+    { kind: "update-menu", text: "Choose a provider" },
+  );
+  assert.deepEqual(
+    buildTelegramModelCallbackPlan({
+      data: "model:provider:openai",
+      state,
+      activeModel: modelA,
+      currentThinkingLevel: "medium",
+      isIdle: true,
+      canRestartBusyRun: false,
+      hasActiveToolExecutions: false,
+    }),
+    { kind: "update-menu", text: "Provider: OpenAI GPT" },
+  );
+  assert.deepEqual(
+    buildTelegramModelCallbackPlan({
       data: "model:page:1",
       state,
       activeModel: modelA,
@@ -381,15 +426,19 @@ test("Menu helpers build model callback plans for paging, selection, and restart
     }),
     {
       kind: "refresh-status",
-      selection: state.allModels[0],
+      selection: state.scopedModels[0],
       callbackText: "Model: gpt-5",
-      shouldApplyThinkingLevel: false,
+      shouldApplyThinkingLevel: true,
     },
   );
+  const switchState = createMenuState<MenuModel>(2, {
+    scope: "all",
+    allModels: [{ model: modelA }, { model: modelB }],
+  });
   assert.deepEqual(
     buildTelegramModelCallbackPlan({
       data: "model:pick:1",
-      state,
+      state: switchState,
       activeModel: modelA,
       currentThinkingLevel: "medium",
       isIdle: false,
@@ -398,7 +447,7 @@ test("Menu helpers build model callback plans for paging, selection, and restart
     }),
     {
       kind: "switch-model",
-      selection: state.allModels[1],
+      selection: switchState.allModels[1],
       mode: "restart-after-tool",
       callbackText:
         "Switched to claude-3. Restarting after the current tool finishes…",
@@ -407,7 +456,7 @@ test("Menu helpers build model callback plans for paging, selection, and restart
   assert.deepEqual(
     buildTelegramModelCallbackPlan({
       data: "model:pick:1",
-      state,
+      state: switchState,
       activeModel: modelA,
       currentThinkingLevel: "medium",
       isIdle: false,
@@ -464,7 +513,7 @@ test("Menu helpers open status and model menus through runtime ports", async () 
     "status:1:status-html:alpha:medium",
     "store:11:status",
     "model:1:alpha",
-    "store:12:model",
+    "store:12:provider",
   ]);
 });
 
@@ -1113,8 +1162,8 @@ test("Menu helpers build pure render payloads before transport", () => {
     modelA,
     "medium",
   );
-  assert.equal(modelPayload.nextMode, "model");
-  assert.equal(modelPayload.text, "<b>Choose a model:</b>");
+  assert.equal(modelPayload.nextMode, "provider");
+  assert.equal(modelPayload.text, "<b>Choose a provider:</b>");
   assert.equal(modelPayload.mode, "html");
   assert.equal(thinkingPayload.nextMode, "thinking");
   assert.match(thinkingPayload.text, /^Choose a thinking level/);
@@ -1159,12 +1208,12 @@ test("Menu action runtime opens and updates interactive menu messages", async ()
   await runtime.updateStatusMessage(state, "ctx");
   await runtime.sendStatusMessage(1, 2, "ctx");
   await runtime.openModelMenu(1, 2, "ctx");
-  assert.equal(events[0], "edit:1:2:html:<b>Choose a model:</b>");
+  assert.equal(events[0], "edit:1:2:html:<b>Choose a provider:</b>");
   assert.match(events[1] ?? "", /^edit:1:2:plain:Choose a thinking level/);
   assert.equal(events[2], "edit:1:2:html:<b>Status ctx</b>");
   assert.equal(events[3], "send:1:html:<b>Status ctx</b>");
   assert.equal(events[4], "store:99");
-  assert.equal(events[5], "send:1:html:<b>Choose a model:</b>");
+  assert.equal(events[5], "send:1:html:<b>Choose a provider:</b>");
   assert.equal(events[6], "store:99");
 });
 
@@ -1225,7 +1274,7 @@ test("Menu action runtime with state builder opens menus from settings runtime",
   assert.deepEqual(events, [
     "reload:/repo",
     "patterns:1",
-    "send:<b>Choose a model:</b>",
+    "send:<b>Choose a provider:</b>",
     "store:99",
   ]);
 });
@@ -1275,11 +1324,11 @@ test("Menu helpers update and send interactive menu messages", async () => {
   const sentModelId = await sendTelegramModelMenuMessage(state, modelA, deps);
   assert.equal(sentStatusId, 99);
   assert.equal(sentModelId, 99);
-  assert.equal(events[0], "edit:1:2:html:<b>Choose a model:</b>");
+  assert.equal(events[0], "edit:1:2:html:<b>Choose a provider:</b>");
   assert.match(events[1] ?? "", /^edit:1:2:plain:Choose a thinking level/);
   assert.equal(events[2], "edit:1:2:html:<b>Status</b>");
   assert.equal(events[3], "send:1:html:<b>Status</b>");
-  assert.equal(events[4], "send:1:html:<b>Choose a model:</b>");
+  assert.equal(events[4], "send:1:html:<b>Choose a provider:</b>");
 });
 
 test("Menu helpers build model, thinking, and status UI payloads", () => {
