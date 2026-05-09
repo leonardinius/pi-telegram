@@ -773,6 +773,89 @@ test("Command or prompt runtime routes commands before enqueue fallback", async 
   ]);
 });
 
+test("Command helpers run quit pre-hook before tmux kill", async () => {
+  const events: string[] = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((callback: () => void) => {
+    callback();
+    return 0 as never;
+  }) as unknown as typeof setTimeout;
+  try {
+    await handleTelegramQuitCommand({
+      hasAbortHandler: () => true,
+      abortCurrentTurn: () => {
+        events.push("abort");
+      },
+      clearPendingModelSwitch: () => {
+        events.push("clear");
+      },
+      hasQueuedTelegramItems: () => true,
+      setPreserveQueuedTurnsAsHistory: (preserve) => {
+        events.push(`preserve:${preserve}`);
+      },
+      updateStatus: () => {
+        events.push("status");
+      },
+      sendTextReply: async (text) => {
+        events.push(`reply:${text}`);
+      },
+      runPreQuitHook: async () => {
+        events.push("prequit");
+      },
+      killTmuxSession: async () => {
+        events.push("kill");
+      },
+    });
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+  assert.equal(events[0], "clear");
+  assert.equal(events[1], "preserve:true");
+  assert.equal(events[2], "abort");
+  assert.equal(events[3], "status");
+  assert.match(events[4], /^reply:/);
+  assert.equal(events[5], "prequit");
+  assert.equal(events[6], "kill");
+});
+
+test("Command helpers continue quit when pre-hook fails", async () => {
+  const events: string[] = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((callback: () => void) => {
+    callback();
+    return 0 as never;
+  }) as unknown as typeof setTimeout;
+  try {
+    await handleTelegramQuitCommand({
+      hasAbortHandler: () => false,
+      abortCurrentTurn: () => {},
+      clearPendingModelSwitch: () => {},
+      hasQueuedTelegramItems: () => false,
+      setPreserveQueuedTurnsAsHistory: () => {},
+      updateStatus: () => {
+        events.push("status");
+      },
+      sendTextReply: async (text) => {
+        events.push(`reply:${text}`);
+      },
+      runPreQuitHook: async () => {
+        events.push("prequit");
+        throw new Error("boom");
+      },
+      killTmuxSession: async () => {
+        events.push("kill");
+      },
+    });
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+  assert.equal(events[0], "status");
+  assert.match(events[1], /^reply:/);
+  assert.equal(events[2], "prequit");
+  assert.equal(events[3], "reply:Pre-quit hook failed: boom");
+  assert.equal(events[4], "kill");
+});
+
 test("Command helpers execute command actions through provided handlers", async () => {
   const events: string[] = [];
   const deps = {
