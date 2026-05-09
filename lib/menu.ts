@@ -701,10 +701,10 @@ function buildTelegramModelSelectionMenuText(state: TelegramModelMenuState): str
     ? formatTelegramModelProviderLabel(
         isSyntheticFreeProvider ? "openrouter" : state.provider,
         isSyntheticFreeProvider,
-      )
+      ) ?? state.provider
     : undefined;
   const lines = [
-    state.provider ? `<b>Choose a model from ${escapeHtml(providerLabel)}:</b>` : MODEL_MENU_TITLE,
+    state.provider ? `<b>Choose a model from ${escapeHtml(providerLabel ?? state.provider)}:</b>` : MODEL_MENU_TITLE,
   ];
   if (state.note) lines.push(state.note);
   return lines.join("\n");
