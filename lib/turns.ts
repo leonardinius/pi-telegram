@@ -275,7 +275,6 @@ export function createTelegramPromptTurnRuntimeBuilder<
       downloadFile: deps.downloadFile,
     });
     let rawText = extractTelegramMessagesText(messages);
-    let voiceTranscribed = false;
     if (deps.transcribeVoiceFile) {
       for (const file of files) {
         const isVoiceLike =
@@ -289,9 +288,8 @@ export function createTelegramPromptTurnRuntimeBuilder<
           deps.getVoiceTranscribeModel?.() ?? "tiny",
         );
         if (transcript) {
-          rawText = transcript;
-          voiceTranscribed = true;
-          break;
+          const transcriptBlock = `User request: ${transcript}`;
+          rawText = rawText ? `${rawText}\n\n${transcriptBlock}` : transcriptBlock;
         }
       }
     }
@@ -301,7 +299,7 @@ export function createTelegramPromptTurnRuntimeBuilder<
       historyTurns,
       queueOrder: deps.allocateQueueOrder(),
       rawText,
-      files: voiceTranscribed ? [] : files,
+      files,
       inferImageMimeType: guessMediaType,
     });
   };

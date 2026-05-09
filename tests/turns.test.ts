@@ -157,11 +157,14 @@ test("Turn runtime builder routes voice transcript into prompt text", async () =
     ],
     [],
   );
-  assert.equal(turn.statusSummary, "Привет из войса");
-  assert.equal(turn.historyText, "Привет из войса");
+  assert.equal(turn.statusSummary, "User request: Привет из войса");
+  assert.equal(
+    turn.historyText,
+    "User request: Привет из войса\nAttachments:\n- /tmp/voice-12.ogg",
+  );
   assert.equal(
     (turn.content[0] as { type: "text"; text: string }).text,
-    "[telegram] Привет из войса",
+    "[telegram] User request: Привет из войса\n\nTelegram attachments were saved locally:\n- /tmp/voice-12.ogg",
   );
 });
 

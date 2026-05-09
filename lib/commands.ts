@@ -3,10 +3,6 @@
  * Owns slash-command normalization and command side-effect branching behind runtime ports
  */
 
-import { execFile } from "node:child_process";
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-
 import { pairTelegramUserIfNeeded } from "./config.ts";
 import {
   createTelegramControlItemBuilder,
@@ -583,26 +579,6 @@ function getRandomTelegramQuitPhrase(): string {
   ];
 }
 
-export function createTelegramPreQuitHook(): (() => Promise<void>) | undefined {
-  const script = process.env.PI_TELEGRAM_PREQUIT_SCRIPT?.trim();
-  if (!script) return undefined;
-  return () =>
-    new Promise((resolve, reject) => {
-      execFile(
-        script,
-        [],
-        { timeout: 30_000, cwd: dirname(fileURLToPath(import.meta.url)) },
-        (error, stdout, stderr) => {
-          if (error) {
-            reject(new Error(stderr.trim() || stdout.trim() || String(error)));
-            return;
-          }
-          resolve();
-        },
-      );
-    });
-}
-
 export interface TelegramQuitCommandDeps extends TelegramRuntimeEventRecorderPort {
   hasAbortHandler: () => boolean;
   abortCurrentTurn: () => void;
@@ -611,7 +587,6 @@ export interface TelegramQuitCommandDeps extends TelegramRuntimeEventRecorderPor
   setPreserveQueuedTurnsAsHistory: (preserve: boolean) => void;
   updateStatus: () => void;
   sendTextReply: (text: string) => Promise<void>;
-  runPreQuitHook?: () => Promise<void>;
   killTmuxSession: () => Promise<void>;
 }
 
@@ -627,16 +602,6 @@ export async function handleTelegramQuitCommand(
   }
   deps.updateStatus();
   await deps.sendTextReply(getRandomTelegramQuitPhrase());
-
-  if (deps.runPreQuitHook) {
-    try {
-      await deps.runPreQuitHook();
-    } catch (error) {
-      const errorMessage = getTelegramCommandErrorMessage(error);
-      deps.recordRuntimeEvent?.("quit", error);
-      await deps.sendTextReply(`Pre-quit hook failed: ${errorMessage}`);
-    }
-  }
 
   setTimeout(() => {
     void deps.killTmuxSession().catch(async (error) => {

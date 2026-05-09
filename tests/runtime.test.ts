@@ -1111,7 +1111,7 @@ test("Extension runtime runs queued model control before the next queued prompt 
   }
 });
 
-testRoot.skip("Extension runtime keeps queued turns blocked until compaction completes", async () => {
+test("Extension runtime keeps queued turns blocked until compaction completes", async () => {
   const telegramConfig = await createRuntimeTelegramConfigFixture();
   const runtimeEvents: string[] = [];
   let compactHooks:
@@ -1209,7 +1209,7 @@ testRoot.skip("Extension runtime keeps queued turns blocked until compaction com
   }
 });
 
-testRoot.skip("Extension runtime coalesces media-group updates into one delayed dispatch", async () => {
+test("Extension runtime coalesces media-group updates into one delayed dispatch", async () => {
   const telegramConfig = await createRuntimeTelegramConfigFixture();
   const runtimeEvents: string[] = [];
   const { handlers, commands, pi } = createRuntimePiHarness({
@@ -1564,7 +1564,7 @@ test("Extension runtime applies idle model picks immediately and refreshes statu
   }
 });
 
-testRoot.skip("Extension runtime switches model in flight and dispatches a continuation turn after abort", async () => {
+test("Extension runtime switches model in flight and dispatches a continuation turn after abort", async () => {
   const telegramConfig = await createRuntimeTelegramConfigFixture();
   const runtimeEvents: string[] = [];
   const modelA = createRuntimeModel("openai", "gpt-a", true);
@@ -1738,7 +1738,7 @@ testRoot.skip("Extension runtime switches model in flight and dispatches a conti
   }
 });
 
-testRoot.skip("Extension runtime delays model-switch abort until the active tool finishes", async () => {
+test("Extension runtime delays model-switch abort until the active tool finishes", async () => {
   const telegramConfig = await createRuntimeTelegramConfigFixture();
   const runtimeEvents: string[] = [];
   const modelA = createRuntimeModel("openai", "gpt-a", true);
