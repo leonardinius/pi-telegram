@@ -280,6 +280,29 @@ test("Menu helpers expose UI constants", () => {
   assert.equal(TELEGRAM_MODEL_PAGE_SIZE, 6);
 });
 
+test("Provider menu includes OpenRouter free synthetic entry after OpenRouter", () => {
+  const openRouterFree = createMenuModel("openrouter", "gpt-oss-120b:free");
+  const openRouterPaid = createMenuModel("openrouter", "gpt-4.1");
+  const anthropic = createMenuModel("anthropic", "claude-3");
+  const state = createMenuState(1, {
+    allModels: [{ model: openRouterPaid }, { model: openRouterFree }, { model: anthropic }],
+    mode: "provider",
+  });
+
+  const markup = buildTelegramProviderMenuReplyMarkup(state, undefined, 10);
+  const labels = markup.inline_keyboard.map((row) => row[0]?.text);
+
+  assert.deepEqual(labels, [
+    "anthropic (1)",
+    "OpenRouter (2)",
+    "OpenRouter [free]* (1)",
+  ]);
+  assert.deepEqual(
+    markup.inline_keyboard.map((row) => row[0]?.callback_data),
+    ["model:provider:anthropic", "model:provider:openrouter", "model:provider:openrouter:free"],
+  );
+});
+
 test("Menu helpers build model menu state and parse callback actions", () => {
   const modelA = createMenuModel("openai", "gpt-5", true);
   const modelB = createMenuModel("anthropic", "claude-3", false);
@@ -305,6 +328,11 @@ test("Menu helpers build model menu state and parse callback actions", () => {
     kind: "model",
     action: "provider",
     value: "openai",
+  });
+  assert.deepEqual(parseTelegramMenuCallbackAction("model:provider:openrouter:free"), {
+    kind: "model",
+    action: "provider",
+    value: "openrouter:free",
   });
   assert.deepEqual(parseTelegramMenuCallbackAction("model:back"), {
     kind: "model",

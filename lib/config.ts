@@ -22,6 +22,8 @@ export interface TelegramConfig {
   botId?: number;
   allowedUserId?: number;
   lastUpdateId?: number;
+  voiceTranscribeLang?: "auto" | "ru" | "en";
+  voiceTranscribeModel?: "base" | "tiny";
 }
 
 export interface TelegramConfigStore {
@@ -32,6 +34,10 @@ export interface TelegramConfigStore {
   hasBotToken: () => boolean;
   getAllowedUserId: () => number | undefined;
   setAllowedUserId: (userId: number) => void;
+  getVoiceTranscribeLang: () => "auto" | "ru" | "en";
+  setVoiceTranscribeLang: (lang: "auto" | "ru" | "en") => void;
+  getVoiceTranscribeModel: () => "base" | "tiny";
+  setVoiceTranscribeModel: (model: "base" | "tiny") => void;
   load: () => Promise<void>;
   persist: (config?: TelegramConfig) => Promise<void>;
 }
@@ -85,6 +91,14 @@ export function createTelegramConfigStore(
     getAllowedUserId: () => config.allowedUserId,
     setAllowedUserId: (userId) => {
       config.allowedUserId = userId;
+    },
+    getVoiceTranscribeLang: () => config.voiceTranscribeLang ?? "ru",
+    setVoiceTranscribeLang: (lang) => {
+      config.voiceTranscribeLang = lang;
+    },
+    getVoiceTranscribeModel: () => config.voiceTranscribeModel ?? "tiny",
+    setVoiceTranscribeModel: (model) => {
+      config.voiceTranscribeModel = model;
     },
     load: async () => {
       config = await readTelegramConfig(configPath);

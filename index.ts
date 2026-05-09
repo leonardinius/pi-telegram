@@ -3,6 +3,7 @@
  * Keeps the runtime wiring in one place while delegating reusable domain logic to /lib modules
  */
 
+
 import * as Api from "./lib/api.ts";
 import * as Attachments from "./lib/attachments.ts";
 import * as Commands from "./lib/commands.ts";
@@ -20,6 +21,7 @@ import * as Replies from "./lib/replies.ts";
 import * as Runtime from "./lib/runtime.ts";
 import * as Setup from "./lib/setup.ts";
 import * as Status from "./lib/status.ts";
+import * as Transcription from "./lib/transcription.ts";
 import * as Turns from "./lib/turns.ts";
 import * as Updates from "./lib/updates.ts";
 
@@ -503,6 +505,21 @@ export default function (pi: Pi.ExtensionAPI) {
               ctx: Pi.ExtensionContext,
             ): Promise<void> => {
               const first = messages?.[0];
+              const voiceFile = Media.collectTelegramFileInfos(messages).find((file) => file.fileName.toLowerCase().startsWith("voice-"));
+              if (voiceFile && first) {
+                const transcript = await Transcription.transcribeVoiceFileWithScript(
+                  await downloadTelegramBridgeFile(voiceFile.file_id, voiceFile.fileName),
+                  configStore.getVoiceTranscribeLang(),
+                  configStore.getVoiceTranscribeModel(),
+                ).catch(() => undefined);
+                if (transcript) {
+                  try {
+                    await sendTextReply(first.chat.id, first.message_id, transcript);
+                  } catch {
+                    // ignore
+                  }
+                }
+              }
               if (first) {
                 const pendingDeleteName = projectsRuntime.consumePendingDelete(
                   first.chat.id,
@@ -564,6 +581,9 @@ export default function (pi: Pi.ExtensionAPI) {
                     {
                       allocateQueueOrder: bridgeRuntime.queue.allocateItemOrder,
                       downloadFile: downloadTelegramBridgeFile,
+                      getVoiceTranscribeLang: configStore.getVoiceTranscribeLang,
+                      transcribeVoiceFile: (file, lang, model) =>
+                        Transcription.transcribeVoiceFileWithScript(file.path, lang, model).catch(() => undefined),
                     },
                   ),
                 updateStatus,

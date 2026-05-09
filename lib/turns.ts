@@ -253,6 +253,13 @@ export type BuildTelegramPromptTurnRuntimeOptions = Omit<
 
 export interface TelegramPromptTurnRuntimeBuilderDeps extends DownloadTelegramMessageFilesDeps {
   allocateQueueOrder: () => number;
+  getVoiceTranscribeLang?: () => "auto" | "ru" | "en";
+  getVoiceTranscribeModel?: () => "base" | "tiny";
+  transcribeVoiceFile?: (
+    file: DownloadedTelegramTurnFile,
+    lang: "auto" | "ru" | "en",
+    model: "base" | "tiny",
+  ) => Promise<string | undefined>;
 }
 
 export function createTelegramPromptTurnRuntimeBuilder<
@@ -263,18 +270,39 @@ export function createTelegramPromptTurnRuntimeBuilder<
   messages: TMessage[],
   historyTurns?: PendingTelegramTurn[],
 ) => Promise<PendingTelegramTurn> {
-  return async (messages, historyTurns = []) =>
-    buildTelegramPromptTurnRuntime({
+  return async (messages, historyTurns = []) => {
+    const files = await downloadTelegramMessageFiles(messages, {
+      downloadFile: deps.downloadFile,
+    });
+    let rawText = extractTelegramMessagesText(messages);
+    if (deps.transcribeVoiceFile) {
+      for (const file of files) {
+        const isVoiceLike =
+          file.mimeType === "audio/ogg" ||
+          file.fileName.toLowerCase().startsWith("voice-") ||
+          file.fileName.toLowerCase().endsWith(".ogg");
+        if (!isVoiceLike) continue;
+        const transcript = await deps.transcribeVoiceFile(
+          file,
+          deps.getVoiceTranscribeLang?.() ?? "auto",
+          deps.getVoiceTranscribeModel?.() ?? "tiny",
+        );
+        if (transcript) {
+          const transcriptBlock = `User request: ${transcript}`;
+          rawText = rawText ? `${rawText}\n\n${transcriptBlock}` : transcriptBlock;
+        }
+      }
+    }
+    return buildTelegramPromptTurnRuntime({
       telegramPrefix: TELEGRAM_PREFIX,
       messages,
       historyTurns,
       queueOrder: deps.allocateQueueOrder(),
-      rawText: extractTelegramMessagesText(messages),
-      files: await downloadTelegramMessageFiles(messages, {
-        downloadFile: deps.downloadFile,
-      }),
+      rawText,
+      files,
       inferImageMimeType: guessMediaType,
     });
+  };
 }
 
 export async function buildTelegramPromptTurn(

@@ -589,8 +589,9 @@ const TELEGRAM_MODEL_PROVIDER_LABELS: Record<string, string> = {
   openrouter: "OpenRouter",
 };
 
-export function formatTelegramModelProviderLabel(provider: string): string {
-  return TELEGRAM_MODEL_PROVIDER_LABELS[provider] ?? provider;
+export function formatTelegramModelProviderLabel(provider: string, free = false): string {
+  const label = TELEGRAM_MODEL_PROVIDER_LABELS[provider] ?? provider;
+  return provider === "openrouter" && free ? `${label} [free]*` : label;
 }
 
 function getTelegramModelItemsForSelectedProvider<TModel extends MenuModel = MenuModel>(
@@ -598,6 +599,12 @@ function getTelegramModelItemsForSelectedProvider<TModel extends MenuModel = Men
 ): ScopedTelegramModel<TModel>[] {
   const items = getModelMenuItems(state);
   if (!state.provider) return items;
+  if (state.provider === "openrouter:free") {
+    const filtered = items.filter(
+      (entry) => entry.model.provider === "openrouter" && entry.model.id.endsWith(":free"),
+    );
+    return filtered.length > 0 ? filtered : [];
+  }
   const filtered = items.filter((entry) => entry.model.provider === state.provider);
   return filtered.length > 0 ? filtered : items;
 }
@@ -630,13 +637,25 @@ export function getTelegramModelProviderGroups<
     next.push(entry);
     groups.set(entry.model.provider, next);
   }
-  return [...groups.entries()]
+
+  const sortedGroups = [...groups.entries()]
     .map(([provider, models]) => ({ provider, models }))
     .sort((a, b) => {
       if (a.provider === state.provider && b.provider !== state.provider) return -1;
       if (b.provider === state.provider && a.provider !== state.provider) return 1;
       return a.provider.localeCompare(b.provider);
     });
+
+  const openRouterIndex = sortedGroups.findIndex((group) => group.provider === "openrouter");
+  if (openRouterIndex >= 0) {
+    const openRouterModels = sortedGroups[openRouterIndex].models;
+    sortedGroups.splice(openRouterIndex + 1, 0, {
+      provider: "openrouter:free",
+      models: openRouterModels.filter((entry) => entry.model.id.endsWith(":free")),
+    });
+  }
+
+  return sortedGroups;
 }
 
 export function getTelegramModelProviderPage<
@@ -661,9 +680,11 @@ function formatProviderButtonText(
   provider: string,
   count: number,
   selected: boolean,
+  free = false,
 ): string {
+  const normalizedProvider = provider === "openrouter:free" ? "openrouter" : provider;
   return truncateTelegramButtonLabel(
-    `${selected ? "✅ " : ""}${formatTelegramModelProviderLabel(provider)} (${count})`,
+    `${selected ? "✅ " : ""}${formatTelegramModelProviderLabel(normalizedProvider, free)} (${count})`,
   );
 }
 
@@ -674,10 +695,16 @@ function buildTelegramProviderMenuText(state: TelegramModelMenuState): string {
 }
 
 function buildTelegramModelSelectionMenuText(state: TelegramModelMenuState): string {
+  const providerModels = getTelegramModelItemsForSelectedProvider(state);
+  const isSyntheticFreeProvider = state.provider === "openrouter:free";
+  const providerLabel = state.provider
+    ? formatTelegramModelProviderLabel(
+        isSyntheticFreeProvider ? "openrouter" : state.provider,
+        isSyntheticFreeProvider,
+      )
+    : undefined;
   const lines = [
-    state.provider
-      ? `<b>Choose a model from ${escapeHtml(formatTelegramModelProviderLabel(state.provider))}:</b>`
-      : MODEL_MENU_TITLE,
+    state.provider ? `<b>Choose a model from ${escapeHtml(providerLabel)}:</b>` : MODEL_MENU_TITLE,
   ];
   if (state.note) lines.push(state.note);
   return lines.join("\n");
@@ -774,7 +801,11 @@ export function parseTelegramMenuCallbackAction(
     };
   }
   if (data?.startsWith("model:")) {
-    const [, action, value] = data.split(":");
+    const rest = data.slice("model:".length);
+    const separator = rest.indexOf(":");
+    if (separator < 0) return { kind: "ignore" };
+    const action = rest.slice(0, separator);
+    const value = rest.slice(separator + 1);
     if (
       action === "noop" ||
       action === "scope" ||
@@ -1340,6 +1371,7 @@ export function buildTelegramProviderMenuReplyMarkup(
         entry.provider,
         entry.models.length,
         selectedProvider === entry.provider,
+        entry.provider === "openrouter:free",
       ),
       callback_data: `model:provider:${entry.provider}`,
     },

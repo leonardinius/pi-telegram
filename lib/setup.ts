@@ -9,6 +9,8 @@ export interface TelegramSetupConfig {
   botUsername?: string;
   allowedUserId?: number;
   lastUpdateId?: number;
+  voiceTranscribeLang?: "auto" | "ru" | "en";
+  voiceTranscribeModel?: "base" | "tiny";
 }
 
 export interface TelegramBotTokenPromptSpec {

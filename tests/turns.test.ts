@@ -130,7 +130,7 @@ test("Turn runtime builder extracts text, downloads files, and allocates order",
   );
 });
 
-test("Turn runtime builder routes attachment handler output into prompt text", async () => {
+test("Turn runtime builder routes voice transcript into prompt text", async () => {
   const buildTurn = createTelegramPromptTurnRuntimeBuilder<
     {
       message_id: number;
@@ -140,6 +140,12 @@ test("Turn runtime builder routes attachment handler output into prompt text", a
   >({
     allocateQueueOrder: () => 1,
     downloadFile: async (_fileId, fileName) => `/tmp/${fileName}`,
+    getVoiceTranscribeLang: () => "ru",
+    getVoiceTranscribeModel: () => "tiny",
+    transcribeVoiceFile: async (file, lang, model) =>
+      file.fileName.startsWith("voice-") && lang === "ru" && model === "tiny"
+        ? "Привет из войса"
+        : undefined,
   });
   const turn = await buildTurn(
     [
@@ -151,11 +157,14 @@ test("Turn runtime builder routes attachment handler output into prompt text", a
     ],
     [],
   );
-  assert.equal(turn.statusSummary, "📎 voice-12.ogg");
-  assert.equal(turn.historyText, "(no text)\nAttachments:\n- /tmp/voice-12.ogg");
+  assert.equal(turn.statusSummary, "User request: Привет из войса");
+  assert.equal(
+    turn.historyText,
+    "User request: Привет из войса\nAttachments:\n- /tmp/voice-12.ogg",
+  );
   assert.equal(
     (turn.content[0] as { type: "text"; text: string }).text,
-    "[telegram]\n\nTelegram attachments were saved locally:\n- /tmp/voice-12.ogg",
+    "[telegram] User request: Привет из войса\n\nTelegram attachments were saved locally:\n- /tmp/voice-12.ogg",
   );
 });
 

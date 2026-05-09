@@ -171,6 +171,8 @@ function createRuntimeModelContext(options: RuntimeModelContextOptions) {
       },
       setStatus: options.setStatus ?? (() => {}),
       notify: () => {},
+      input: async () => undefined,
+      editor: async (_label: string, value: string) => value,
     },
     sessionManager: {
       getEntries: () => [],
