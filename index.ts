@@ -242,7 +242,6 @@ export default function (pi: Pi.ExtensionAPI) {
       sendTextReply: async (text: string): Promise<void> => {
         await sendTextReply(message.chat.id, message.message_id, text);
       },
-      runPreQuitHook: Commands.createTelegramPreQuitHook(),
       killTmuxSession: async () => {
         const result = await Runtime.killTmuxTelegramSession();
         if (!result.ok) {
