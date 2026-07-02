@@ -506,19 +506,54 @@ export default function (pi: Pi.ExtensionAPI) {
             ): Promise<void> => {
               const first = messages?.[0];
               const voiceFile = Media.collectTelegramFileInfos(messages).find((file) => file.fileName.toLowerCase().startsWith("voice-"));
+              let voiceTranscriptPromise: Promise<void> | undefined;
               if (voiceFile && first) {
-                const transcript = await Transcription.transcribeVoiceFileWithScript(
-                  await downloadTelegramBridgeFile(voiceFile.file_id, voiceFile.fileName),
-                  configStore.getVoiceTranscribeLang(),
-                  configStore.getVoiceTranscribeModel(),
-                ).catch(() => undefined);
-                if (transcript) {
+                voiceTranscriptPromise = (async () => {
+                  const startedAt = Date.now();
                   try {
-                    await sendTextReply(first.chat.id, first.message_id, transcript);
-                  } catch {
-                    // ignore
+                    const downloadStartedAt = Date.now();
+                    const voicePath = await downloadTelegramBridgeFile(
+                      voiceFile.file_id,
+                      voiceFile.fileName,
+                    );
+                    const downloadMs = Date.now() - downloadStartedAt;
+                    const transcribeStartedAt = Date.now();
+                    const transcript = await Transcription.transcribeVoiceFileWithScript(
+                      voicePath,
+                      configStore.getVoiceTranscribeLang(),
+                      configStore.getVoiceTranscribeModel(),
+                    ).catch(() => undefined);
+                    const transcribeMs = Date.now() - transcribeStartedAt;
+                    if (transcript) {
+                      const replyStartedAt = Date.now();
+                      try {
+                        await sendTextReply(first.chat.id, first.message_id, transcript);
+                      } catch {
+                        // ignore
+                      }
+                      const replyMs = Date.now() - replyStartedAt;
+                      runtimeEvents.record("voice-transcribe", undefined, {
+                        downloadMs,
+                        transcribeMs,
+                        replyMs,
+                        totalMs: Date.now() - startedAt,
+                      });
+                    } else {
+                      runtimeEvents.record("voice-transcribe", undefined, {
+                        downloadMs,
+                        transcribeMs,
+                        totalMs: Date.now() - startedAt,
+                        transcript: false,
+                      });
+                    }
+                  } catch (error) {
+                    runtimeEvents.record("voice-transcribe", error, {
+                      totalMs: Date.now() - startedAt,
+                      transcript: false,
+                    });
                   }
-                }
+                })();
+                await voiceTranscriptPromise;
               }
               if (first) {
                 const pendingDeleteName = projectsRuntime.consumePendingDelete(

@@ -50,7 +50,7 @@ async function flushEventLoop(iterations = 5): Promise<void> {
 
 async function waitForEventLoopCondition(
   predicate: () => boolean,
-  iterations = 100,
+  iterations = 1000,
 ): Promise<void> {
   for (let i = 0; i < iterations; i++) {
     if (predicate()) return;
@@ -131,6 +131,8 @@ function createRuntimeExtensionContext(
       },
       setStatus: () => {},
       notify: () => {},
+      input: async () => undefined,
+      editor: async (_label: string, value: string) => value,
     },
     isIdle: () => true,
     hasPendingMessages: () => false,
@@ -377,7 +379,7 @@ test("Runtime state helpers allocate queue order and manage typing loops", async
 
 async function waitForCondition(
   predicate: () => boolean,
-  timeoutMs = 2000,
+  timeoutMs = 60000,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {

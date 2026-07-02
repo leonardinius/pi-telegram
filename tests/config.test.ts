@@ -33,9 +33,9 @@ test("Telegram config helpers persist and reload config", async () => {
     botUsername: "demo_bot",
     allowedUserId: 42,
   };
-  await writeTelegramConfig(agentDir, configPath, { ...config, voiceTranscribeModel: "base" });
+  await writeTelegramConfig(agentDir, configPath, { ...config, voiceTranscribeModel: "small" });
   const reloaded = await readTelegramConfig(configPath);
-  assert.deepEqual(reloaded, { ...config, voiceTranscribeModel: "base" });
+  assert.deepEqual(reloaded, { ...config, voiceTranscribeModel: "small" });
   const raw = await readFile(configPath, "utf8");
   assert.match(raw, /demo_bot/);
   assert.equal((await stat(configPath)).mode & 0o777, 0o600);
@@ -55,7 +55,7 @@ test("Telegram config store owns load, mutation, and persistence", async () => {
     botToken: "initial",
   });
   assert.equal(store.getVoiceTranscribeLang(), "ru");
-  assert.equal(store.getVoiceTranscribeModel(), "tiny");
+  assert.equal(store.getVoiceTranscribeModel(), "small");
   store.update((config) => {
     config.allowedUserId = 42;
   });

@@ -3,6 +3,7 @@
  * Builds usage, cost, and context summaries for the interactive Telegram status view
  */
 
+
 export type TelegramStatusQueueLane = "control" | "priority" | "default";
 
 export interface TelegramUsageStats {
@@ -203,21 +204,27 @@ export function recordStructuredTelegramRuntimeEvent(
   input: TelegramRuntimeEventInput,
   options: { botToken?: string; maxEvents: number; now?: number },
 ): void {
+  const at = options.now ?? Date.now();
   const details = normalizeTelegramRuntimeEventDetails(
     input.details,
     options.botToken,
   );
-  events.push({
-    at: options.now ?? Date.now(),
+  const event: TelegramRuntimeEvent = {
+    at,
     category: input.category,
     message: redactTelegramRuntimeMessage(
       getTelegramRuntimeEventMessage(input),
       options.botToken,
     ),
     ...(details ? { details } : {}),
-  });
+  };
+  events.push(event);
   while (events.length > options.maxEvents) {
     events.shift();
+  }
+  try {
+  } catch {
+    // ignore file logging failures
   }
 }
 

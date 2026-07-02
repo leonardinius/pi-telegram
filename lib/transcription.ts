@@ -3,8 +3,9 @@
  */
 
 import { execFile } from "node:child_process";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+
 
 export function transcribeVoiceFileWithScript(
   filePath: string,

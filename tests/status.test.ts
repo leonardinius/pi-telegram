@@ -4,6 +4,7 @@
  */
 
 import assert from "node:assert/strict";
+import { afterEach } from "node:test";
 import test from "node:test";
 
 import {
@@ -278,14 +279,32 @@ test("Structured runtime event recording redacts messages and details", () => {
 test("Runtime event recorder owns redacted bounded event state", () => {
   const recorder = createTelegramRuntimeEventRecorder({
     getBotToken: () => "123:abc",
-    maxEvents: 1,
+    maxEvents: 2,
     now: () => 1000,
   });
-  recorder.record("api", new Error("token 123:abc failed"), {
-    method: "sendMessage",
+  recorder.record("voice-transcribe", undefined, {
+    downloadMs: 7,
+    transcribeMs: 931,
+    replyMs: 18,
+    totalMs: 956,
+    transcript: true,
+    token: "123:abc",
   });
   recorder.record("poll", "ok");
   assert.deepEqual(recorder.getEvents(), [
+    {
+      at: 1000,
+      category: "voice-transcribe",
+      message: "undefined",
+      details: {
+        downloadMs: 7,
+        transcribeMs: 931,
+        replyMs: 18,
+        totalMs: 956,
+        transcript: true,
+        token: "<redacted-token>",
+      },
+    },
     { at: 1000, category: "poll", message: "ok" },
   ]);
   recorder.clear();

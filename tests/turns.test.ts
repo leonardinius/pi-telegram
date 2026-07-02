@@ -141,9 +141,9 @@ test("Turn runtime builder routes voice transcript into prompt text", async () =
     allocateQueueOrder: () => 1,
     downloadFile: async (_fileId, fileName) => `/tmp/${fileName}`,
     getVoiceTranscribeLang: () => "ru",
-    getVoiceTranscribeModel: () => "tiny",
+    getVoiceTranscribeModel: () => "small",
     transcribeVoiceFile: async (file, lang, model) =>
-      file.fileName.startsWith("voice-") && lang === "ru" && model === "tiny"
+      file.fileName.startsWith("voice-") && lang === "ru" && model === "small"
         ? "Привет из войса"
         : undefined,
   });

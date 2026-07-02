@@ -15,6 +15,9 @@ BIN="${WHISPER_BIN:-$WHISPER_DIR/build/bin/whisper-cli}"
 TMP_DIR="${TMPDIR:-/tmp}"
 BASE="$(basename "$INPUT")"
 WAV="$TMP_DIR/${BASE%.*}.wav"
+THREADS="${WHISPER_THREADS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 4)}"
+BEAM_SIZE="${WHISPER_BEAM_SIZE:-1}"
+BEST_OF="${WHISPER_BEST_OF:-1}"
 
 if [[ ! -f "$BIN" ]]; then
   echo "whisper binary not found: $BIN" >&2
@@ -31,7 +34,7 @@ else
   cp "$INPUT" "$WAV"
 fi
 
-ARGS=("-m" "$MODEL" "-f" "$WAV" "-nt" "-np")
+ARGS=("-m" "$MODEL" "-f" "$WAV" "-t" "$THREADS" "-bs" "$BEAM_SIZE" "-bo" "$BEST_OF" "-nt" "-np")
 if [[ "$LANG" != "auto" ]]; then
   ARGS+=("-l" "$LANG")
 fi
