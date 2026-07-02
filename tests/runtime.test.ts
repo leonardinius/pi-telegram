@@ -1240,6 +1240,10 @@ test("Extension runtime coalesces media-group updates into one delayed dispatch"
               caption: "first caption",
             },
           },
+        ]);
+      }
+      if (getUpdatesCalls === 2) {
+        return createRuntimeTelegramApiResponse([
           {
             _: "other",
             update_id: 2,

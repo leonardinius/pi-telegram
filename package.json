@@ -21,7 +21,7 @@
     "url": "https://github.com/llblab/pi-telegram/issues"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test": "node --experimental-strip-types --test --test-timeout=30000 tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "audit": "npm audit",
     "pack:check": "npm pack --dry-run",
