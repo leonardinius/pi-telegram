@@ -125,6 +125,7 @@ test("Routing runtime forwards authorized text messages into prompt queueing", a
     dispatchNextQueuedTelegramTurn: () => events.push("dispatch"),
     answerCallbackQuery: async () => undefined,
     sendTextReply: async () => undefined,
+    showUsage: async () => undefined,
     setMyCommands: async () => undefined,
     downloadFile: async (_fileId, fileName) => `/tmp/${fileName}`,
     getThinkingLevel: () => "high",

@@ -29,6 +29,7 @@ export const TELEGRAM_BOT_COMMANDS: readonly TelegramBotCommandDefinition[] = [
     command: "status",
     description: "📊 Show model, usage, cost, and context",
   },
+  { command: "usage", description: "📈 Show Codex quota windows" },
   { command: "model", description: "🧠 Open model selector" },
   { command: "compact", description: "🧹 Compact current pi session" },
   { command: "stop", description: "🛑 Abort current pi task" },
@@ -63,6 +64,7 @@ export type TelegramCommandAction =
   | { kind: "compact"; executionMode: "immediate" }
   | { kind: "autoReload"; executionMode: "immediate" }
   | { kind: "status"; executionMode: "control-queue" }
+  | { kind: "usage"; executionMode: "control-queue" }
   | { kind: "model"; executionMode: "control-queue" }
   | { kind: "extensions"; executionMode: "immediate" }
   | { kind: "projects"; executionMode: "immediate" }
@@ -83,6 +85,7 @@ export interface TelegramCommandActionDeps<TMessage, TContext> {
   handleCompact: (message: TMessage, ctx: TContext) => Promise<void>;
   handleAutoReload?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleStatus: (message: TMessage, ctx: TContext) => Promise<void>;
+  handleUsage?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleModel: (message: TMessage, ctx: TContext) => Promise<void>;
   handleExtensions?: (message: TMessage, ctx: TContext) => Promise<void>;
   handleProjects?: (message: TMessage, ctx: TContext) => Promise<void>;
@@ -224,6 +227,11 @@ export interface TelegramCommandTargetRuntimeDeps<TContext> {
     replyToMessageId: number,
     ctx: TContext,
   ) => Promise<void>;
+  showUsage: (
+    chatId: number,
+    replyToMessageId: number,
+    ctx: TContext,
+  ) => Promise<void>;
   openModelMenu: (
     chatId: number,
     replyToMessageId: number,
@@ -248,6 +256,7 @@ export interface TelegramCommandTargetRuntime<
     execute: (ctx: TContext) => Promise<void>,
   ) => void;
   showStatus: (message: TMessage, ctx: TContext) => Promise<void>;
+  showUsage: (message: TMessage, ctx: TContext) => Promise<void>;
   openModelMenu: (message: TMessage, ctx: TContext) => Promise<void>;
   sendTextReply: (message: TMessage, text: string) => Promise<void>;
 }
@@ -332,6 +341,7 @@ export function createTelegramCommandTargetQueueRuntime<
       dispatchNextQueuedTelegramTurn: deps.dispatchNextQueuedTelegramTurn,
     }),
     showStatus: deps.showStatus,
+    showUsage: deps.showUsage,
     openModelMenu: deps.openModelMenu,
     sendTextReply: deps.sendTextReply,
   });
@@ -356,6 +366,10 @@ export function createTelegramCommandTargetRuntime<
     showStatus: (message, ctx) => {
       const target = getTelegramCommandMessageTarget(message);
       return deps.showStatus(target.chatId, target.replyToMessageId, ctx);
+    },
+    showUsage: (message, ctx) => {
+      const target = getTelegramCommandMessageTarget(message);
+      return deps.showUsage(target.chatId, target.replyToMessageId, ctx);
     },
     openModelMenu: (message, ctx) => {
       const target = getTelegramCommandMessageTarget(message);
@@ -408,6 +422,7 @@ export interface TelegramCommandRuntimeDeps<
     execute: (ctx: TContext) => Promise<void>,
   ) => void;
   showStatus: (message: TMessage, ctx: TContext) => Promise<void>;
+  showUsage: (message: TMessage, ctx: TContext) => Promise<void>;
   openModelMenu: (message: TMessage, ctx: TContext) => Promise<void>;
   getAllowedUserId: () => number | undefined;
   setAllowedUserId: (userId: number) => void;
@@ -457,6 +472,8 @@ export function buildTelegramCommandAction(
       return { kind: "autoReload", executionMode: "immediate" };
     case "status":
       return { kind: "status", executionMode: "control-queue" };
+    case "usage":
+      return { kind: "usage", executionMode: "control-queue" };
     case "model":
       return { kind: "model", executionMode: "control-queue" };
     case "extensions":
@@ -620,6 +637,14 @@ export async function handleTelegramStatusCommand<TContext>(
   deps.enqueueControlItem("status", "⚡ status", deps.showStatus);
 }
 
+export async function handleTelegramUsageCommand<TContext>(
+  deps: TelegramQueuedControlCommandDeps<TContext> & {
+    showUsage: (ctx: TContext) => Promise<void>;
+  },
+): Promise<void> {
+  deps.enqueueControlItem("usage", "⚡ usage", deps.showUsage);
+}
+
 export async function handleTelegramModelCommand<TContext>(
   deps: TelegramQueuedControlCommandDeps<TContext> & {
     openModelMenu: (ctx: TContext) => Promise<void>;
@@ -649,6 +674,10 @@ export async function executeTelegramCommandAction<TMessage, TContext>(
       return true;
     case "status":
       await deps.handleStatus(message, ctx);
+      return true;
+    case "usage":
+      if (!deps.handleUsage) return false;
+      await deps.handleUsage(message, ctx);
       return true;
     case "model":
       await deps.handleModel(message, ctx);
@@ -680,6 +709,7 @@ export interface TelegramCommandHandlerTargetRuntimeDeps<
       TelegramCommandRuntimeDeps<TMessage, TContext>,
       | "enqueueControlItem"
       | "showStatus"
+      | "showUsage"
       | "openModelMenu"
       | "sendTextReply"
       | "registerBotCommands"
@@ -711,6 +741,7 @@ export function createTelegramCommandHandlerTargetRuntime<
     appendControlItem: deps.appendControlItem,
     dispatchNextQueuedTelegramTurn: deps.dispatchNextQueuedTelegramTurn,
     showStatus: deps.showStatus,
+    showUsage: deps.showUsage,
     openModelMenu: deps.openModelMenu,
     sendTextReply: deps.sendTextReply,
   });
@@ -732,6 +763,7 @@ export function createTelegramCommandHandlerTargetRuntime<
     compact: deps.compact,
     enqueueControlItem: commandTargetRuntime.enqueueControlItem,
     showStatus: commandTargetRuntime.showStatus,
+    showUsage: commandTargetRuntime.showUsage,
     openModelMenu: commandTargetRuntime.openModelMenu,
     getAllowedUserId: deps.getAllowedUserId,
     setAllowedUserId: deps.setAllowedUserId,
@@ -858,6 +890,12 @@ async function handleTelegramCommandRuntime<
         await handleTelegramStatusCommand<TContext>({
           enqueueControlItem: enqueueControlFor(nextMessage, commandCtx),
           showStatus: (controlCtx) => deps.showStatus(nextMessage, controlCtx),
+        });
+      },
+      handleUsage: async (nextMessage, commandCtx) => {
+        await handleTelegramUsageCommand<TContext>({
+          enqueueControlItem: enqueueControlFor(nextMessage, commandCtx),
+          showUsage: (controlCtx) => deps.showUsage(nextMessage, controlCtx),
         });
       },
       handleModel: async (nextMessage, commandCtx) => {

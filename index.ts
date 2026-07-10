@@ -21,6 +21,7 @@ import * as Replies from "./lib/replies.ts";
 import * as Runtime from "./lib/runtime.ts";
 import * as Setup from "./lib/setup.ts";
 import * as Status from "./lib/status.ts";
+import * as Usage from "./lib/usage.ts";
 import * as Transcription from "./lib/transcription.ts";
 import * as Turns from "./lib/turns.ts";
 import * as Updates from "./lib/updates.ts";
@@ -446,6 +447,20 @@ export default function (pi: Pi.ExtensionAPI) {
               allocateControlOrder: bridgeRuntime.queue.allocateControlOrder,
               appendControlItem: queueMutationRuntime.append,
               showStatus: menuActions.sendStatusMessage,
+              showUsage: async (chatId, replyToMessageId, commandCtx) => {
+                try {
+                  await sendTextReply(
+                    chatId,
+                    replyToMessageId,
+                    await Usage.buildCodexUsageHtml(commandCtx),
+                    { parseMode: "HTML" },
+                  );
+                } catch (error) {
+                  runtimeEvents.record("usage", error);
+                  const message = error instanceof Error ? error.message : String(error);
+                  await sendTextReply(chatId, replyToMessageId, `Usage failed: ${message}`);
+                }
+              },
               openModelMenu: menuActions.openModelMenu,
               getAllowedUserId: configStore.getAllowedUserId,
               setAllowedUserId: configStore.setAllowedUserId,

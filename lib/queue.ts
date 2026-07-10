@@ -83,7 +83,7 @@ export interface PendingTelegramControlItem<
   TContext = unknown,
 > extends TelegramQueueItemBase {
   kind: "control";
-  controlType: "status" | "model";
+  controlType: "status" | "usage" | "model";
   execute: (ctx: TContext) => Promise<void>;
 }
 

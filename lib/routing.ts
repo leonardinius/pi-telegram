@@ -62,6 +62,11 @@ export interface TelegramInboundRouteRuntimeDeps<
     replyToMessageId: number,
     text: string,
   ) => Promise<number | undefined>;
+  showUsage: (
+    chatId: number,
+    replyToMessageId: number,
+    ctx: TContext,
+  ) => Promise<void>;
   setMyCommands: Commands.TelegramBotCommandRegistrationDeps["setMyCommands"];
   downloadFile: Media.DownloadTelegramMessageFilesDeps["downloadFile"];
   getThinkingLevel: () => Model.ThinkingLevel;
@@ -147,6 +152,7 @@ export function createTelegramInboundRouteRuntime<
     allocateControlOrder: deps.bridgeRuntime.queue.allocateControlOrder,
     appendControlItem: deps.queueMutationRuntime.append,
     showStatus: deps.menuActions.sendStatusMessage,
+    showUsage: deps.showUsage,
     openModelMenu: deps.menuActions.openModelMenu,
     getAllowedUserId: deps.configStore.getAllowedUserId,
     setAllowedUserId: deps.configStore.setAllowedUserId,

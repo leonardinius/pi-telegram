@@ -24,6 +24,7 @@ import {
   handleTelegramHelpCommand,
   handleTelegramModelCommand,
   handleTelegramStatusCommand,
+  handleTelegramUsageCommand,
   handleTelegramStopCommand,
   parseTelegramCommand,
   registerTelegramBotCommands,
@@ -40,6 +41,7 @@ test("Command helpers expose Telegram bot command definitions", () => {
       command: "status",
       description: "📊 Show model, usage, cost, and context",
     },
+    { command: "usage", description: "📈 Show Codex quota windows" },
     { command: "model", description: "🧠 Open model selector" },
     { command: "compact", description: "🧹 Compact current pi session" },
     { command: "stop", description: "🛑 Abort current pi task" },
@@ -183,6 +185,7 @@ test("Command target queue runtime binds control queue and chat targets", async 
       calls.push(`dispatch:${ctx}`);
     },
     showStatus: async () => {},
+    showUsage: async () => {},
     openModelMenu: async () => {},
     sendTextReply: async () => {},
   });
@@ -213,6 +216,9 @@ test("Command target runtime binds chat reply targets to command ports", async (
     showStatus: async (chatId, replyToMessageId, ctx) => {
       calls.push(`status:${chatId}:${replyToMessageId}:${ctx}`);
     },
+    showUsage: async (chatId, replyToMessageId, ctx) => {
+      calls.push(`usage:${chatId}:${replyToMessageId}:${ctx}`);
+    },
     openModelMenu: async (chatId, replyToMessageId, ctx) => {
       calls.push(`model:${chatId}:${replyToMessageId}:${ctx}`);
     },
@@ -232,12 +238,14 @@ test("Command target runtime binds chat reply targets to command ports", async (
   );
   await runtime.showStatus(message, "ctx");
   await runtime.openModelMenu(message, "ctx");
+  await runtime.showUsage(message, "ctx");
   await runtime.sendTextReply(message, "hello");
   assert.deepEqual(calls, [
     "enqueue:7:11:ctx:status:⚡ status",
     "execute",
     "status:7:11:ctx",
     "model:7:11:ctx",
+    "usage:7:11:ctx",
     "reply:7:11:hello",
   ]);
 });
@@ -253,6 +261,10 @@ test("Command helpers build command actions", () => {
   });
   assert.deepEqual(buildTelegramCommandAction("status"), {
     kind: "status",
+    executionMode: "control-queue",
+  });
+  assert.deepEqual(buildTelegramCommandAction("usage"), {
+    kind: "usage",
     executionMode: "control-queue",
   });
   assert.deepEqual(buildTelegramCommandAction("model"), {
@@ -286,6 +298,7 @@ test("Command execution mode contract separates immediate and queued controls", 
     ["help", "immediate"],
     ["start", "immediate"],
     ["status", "control-queue"],
+    ["usage", "control-queue"],
     ["model", "control-queue"],
     ["unknown", "ignored"],
     [undefined, "ignored"],
@@ -487,10 +500,10 @@ test("Command helpers report compact errors", async () => {
   ]);
 });
 
-test("Command helpers enqueue status and model control commands", async () => {
+test("Command helpers enqueue status, usage, and model control commands", async () => {
   const events: string[] = [];
   const enqueueControlItem = (
-    controlType: "status" | "model",
+    controlType: "status" | "usage" | "model",
     statusSummary: string,
     execute: (ctx: string) => Promise<void>,
   ) => {
@@ -503,6 +516,12 @@ test("Command helpers enqueue status and model control commands", async () => {
       events.push(`show:${ctx}`);
     },
   });
+  await handleTelegramUsageCommand({
+    enqueueControlItem,
+    showUsage: async (ctx) => {
+      events.push(`usage:${ctx}`);
+    },
+  });
   await handleTelegramModelCommand({
     enqueueControlItem,
     openModelMenu: async (ctx) => {
@@ -512,6 +531,8 @@ test("Command helpers enqueue status and model control commands", async () => {
   assert.deepEqual(events, [
     "status:⚡ status",
     "show:ctx",
+    "usage:⚡ usage",
+    "usage:ctx",
     "model:⚡ model",
     "model:ctx",
   ]);
@@ -626,6 +647,7 @@ test("Command handler target runtime binds command targets into command handling
       );
     },
     showStatus: async () => {},
+    showUsage: async () => {},
     openModelMenu: async () => {},
     getAllowedUserId: () => undefined,
     setAllowedUserId: () => {},
@@ -637,7 +659,16 @@ test("Command handler target runtime binds command targets into command handling
     await handleCommand("status", { chat: { id: 7 }, message_id: 11 }, "ctx"),
     true,
   );
-  assert.deepEqual(calls, ["append:7:11:status:ctx", "dispatch:ctx"]);
+  assert.equal(
+    await handleCommand("usage", { chat: { id: 7 }, message_id: 12 }, "ctx"),
+    true,
+  );
+  assert.deepEqual(calls, [
+    "append:7:11:status:ctx",
+    "dispatch:ctx",
+    "append:7:12:usage:ctx",
+    "dispatch:ctx",
+  ]);
 });
 
 test("Command runtime routes commands through runtime ports", async () => {
@@ -681,7 +712,7 @@ test("Command runtime routes commands through runtime ports", async () => {
     enqueueControlItem: async (
       nextMessage: typeof message,
       _ctx: { idle: boolean },
-      controlType: "status" | "model",
+      controlType: "status" | "usage" | "model",
       statusSummary: string,
       execute: (ctx: { idle: boolean }) => Promise<void>,
     ) => {
@@ -692,6 +723,9 @@ test("Command runtime routes commands through runtime ports", async () => {
     },
     showStatus: async (nextMessage: typeof message) => {
       events.push(`show:${nextMessage.chat.id}`);
+    },
+    showUsage: async (nextMessage: typeof message) => {
+      events.push(`usage:${nextMessage.chat.id}`);
     },
     openModelMenu: async (nextMessage: typeof message) => {
       events.push(`model:${nextMessage.chat.id}`);
@@ -713,6 +747,7 @@ test("Command runtime routes commands through runtime ports", async () => {
   };
   const handleCommand = createTelegramCommandHandler(deps);
   assert.equal(await handleCommand("status", message, { idle: true }), true);
+  assert.equal(await handleCommand("usage", message, { idle: true }), true);
   assert.equal(await handleCommand("model", message, { idle: true }), true);
   assert.equal(await handleCommand("debug", message, { idle: true }), false);
   assert.equal(await handleCommand("start", message, { idle: true }), true);
@@ -724,6 +759,8 @@ test("Command runtime routes commands through runtime ports", async () => {
   assert.deepEqual(events, [
     "enqueue:99:status:⚡ status",
     "show:42",
+    "enqueue:99:usage:⚡ usage",
+    "usage:42",
     "enqueue:99:model:⚡ model",
     "model:42",
     "register",
