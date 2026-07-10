@@ -173,11 +173,11 @@ export async function buildCodexUsageHtml(ctx: TelegramUsageContext): Promise<st
   const payload = raw as CodexUsagePayload;
   const nowMs = Date.now();
   const limits = collectLimits(payload, nowMs);
-  const title = ["Codex usage", payload.plan_type ? `plan ${payload.plan_type}` : undefined, credential.email].filter(Boolean).join(" · ");
+  const title = ["Codex usage", payload.plan_type ? `plan ${payload.plan_type}` : undefined].filter(Boolean).join(" · ");
   const lines = [`<b>${escapeHtml(title)}</b>`];
   if (limits.length === 0) lines.push("<code>no limits reported</code>");
   else lines.push(`<pre>${escapeHtml(limits.map((limit) => formatLimit(limit, nowMs)).join("\n"))}</pre>`);
   const credits = toNumber(payload.rate_limit_reset_credits?.available_count);
-  if (credits && credits > 0) lines.push(`<code>${credits} saved reset${credits === 1 ? "" : "s"} available</code>`);
+  if (credits && credits > 0) lines.push(escapeHtml(`${credits} saved reset${credits === 1 ? "" : "s"} available`));
   return lines.join("\n");
 }
